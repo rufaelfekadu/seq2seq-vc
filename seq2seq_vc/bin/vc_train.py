@@ -37,7 +37,7 @@ from seq2seq_vc.utils.types import str_or_none
 from seq2seq_vc.vocoder import Vocoder
 from seq2seq_vc.vocoder.s3prl_feat2wav import S3PRL_Feat2Wav
 from seq2seq_vc.vocoder.griffin_lim import Spectrogram2Waveform
-from seq2seq_vc.vocoder.encodec import EnCodec_decoder
+# from seq2seq_vc.vocoder.encodec import EnCodec_decoder
 
 # set to avoid matplotlib error in CLI environment
 import matplotlib

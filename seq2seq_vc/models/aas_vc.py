@@ -13,11 +13,11 @@ from typing import Literal
 from seq2seq_vc.layers.positional_encoding import ScaledPositionalEncoding
 from seq2seq_vc.modules.transformer.encoder import Encoder as TransformerEncoder
 from seq2seq_vc.modules.conformer.encoder import Encoder as ConformerEncoder
-from seq2seq_vc.modules.transformer.decoder import Decoder
+# from seq2seq_vc.modules.transformer.decoder import Decoder
 from seq2seq_vc.modules.pre_postnets import Prenet, Postnet
 from seq2seq_vc.modules.transformer.mask import subsequent_mask
 from seq2seq_vc.layers.utils import make_pad_mask, make_non_pad_mask
-from seq2seq_vc.modules.transformer.attention import MultiHeadedAttention
+# from seq2seq_vc.modules.transformer.attention import MultiHeadedAttention
 from seq2seq_vc.modules.duration_predictor import (
     DurationPredictor,
     StochasticDurationPredictor,

@@ -11,15 +11,15 @@ stage=-1       # stage to start
 stop_stage=100 # stage to stop
 verbose=1      # verbosity level (lower is less info)
 n_gpus=1       # number of gpus in training
-n_jobs=16      # number of parallel jobs in feature extraction
+n_jobs=8      # number of parallel jobs in feature extraction
 
 conf=conf/aas_vc.melmelmel.v1.yaml
 
 # dataset configuration
 db_root=downloads/ArVoice/ArVoice-syn
 dumpdir=dump                # directory to dump full features
-srcspk=ar-XA-Standard-A                  # available speakers: "clb" "bdl"
-trgspk=ar-XA-Standard-B                  # available speakers: "slt" "rms"
+srcspk=ar-XA-Wavenet-C                  # available speakers: "clb" "bdl"
+trgspk=ar-XA-Wavenet-D                  # available speakers: "slt" "rms"
 stats_ext=h5
 norm_name=self                  # used to specify normalized data.
                             # Ex: `judy` for normalization with pretrained model, `self` for self-normalization
@@ -261,7 +261,7 @@ if [ "${stage}" -le 4 ] && [ "${stop_stage}" -ge 4 ]; then
     [ -z "${checkpoint}" ] && checkpoint="$(ls -dt "${expdir}"/*.pkl | head -1 || true)"
     outdir="${expdir}/results/$(basename "${checkpoint}" .pkl)"
     pids=()
-    for name in "${srcspk}_dev" "${srcspk}_eval"; do
+    for name in "${srcspk}_test"; do
     (
         [ ! -e "${outdir}/${name}" ] && mkdir -p "${outdir}/${name}"
         [ "${n_gpus}" -gt 1 ] && n_gpus=1
@@ -290,7 +290,7 @@ if [ ${stage} -le 5 ] && [ ${stop_stage} -ge 5 ]; then
 
     [ -z "${checkpoint}" ] && checkpoint="$(ls -dt "${expdir}"/*.pkl | head -1 || true)"
     outdir="${expdir}/results/$(basename "${checkpoint}" .pkl)"
-    for _set in "dev" "eval"; do
+    for _set in "test"; do
         name="${srcspk}_${_set}"
         echo "Evaluation start. See the progress via ${outdir}/${name}/evaluation.log."
         ${cuda_cmd} --gpu "${n_gpus}" "${outdir}/${name}/evaluation.log" \

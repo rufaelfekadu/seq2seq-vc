@@ -1,9 +1,9 @@
 ###########################################################
 #                FEATURE EXTRACTION SETTING               #
 ###########################################################
-sampling_rate: 48000     # Sampling rate.
-fft_size: 2048           # FFT size.
-hop_size: 512            # Hop size.
+sampling_rate: 24000     # Sampling rate.
+fft_size: 1024           # FFT size.
+hop_size: 256            # Hop size.
 win_length: null         # Window length.
                          # If set to null, it will be the same as fft_size.
 window: "hann"           # Window function.
@@ -84,20 +84,20 @@ lambda_align: 2.0
 ###########################################################
 #                   INFERENCE SETTING                     #
 ###########################################################
-vocoder:
-    checkpoint: ./downloads/pwg_jp_female/checkpoint-400000steps.pkl
-    config: ./downloads/pwg_jp_female/config.yml
-    stats: ./downloads/pwg_jp_female/stats.h5
+# vocoder:
+#     checkpoint: ./downloads/pwg_jp_female/checkpoint-400000steps.pkl
+#     config: ./downloads/pwg_jp_female/config.yml
+#     stats: ./downloads/pwg_jp_female/stats.h5
 
 ###########################################################
 #                  DATA LOADER SETTING                    #
 ###########################################################
-batch_size: 1                 # Batch size.
+batch_size: 8                 # Batch size.
 pin_memory: true                # Whether to pin memory in Pytorch DataLoader.
 num_workers: 0                  # Number of workers in Pytorch DataLoader.
 allow_cache: true               # Whether to allow cache in dataset. If true, it requires cpu memory.
 mp: false                       # Setting this to false avoids error in multi-gpu machines.
-gradient_accumulate_steps: 8    # Number of forward steps before a backward step. Used when OOM happens.
+gradient_accumulate_steps: 1    # Number of forward steps before a backward step. Used when OOM happens.
 
 ###########################################################
 #             OPTIMIZER & SCHEDULER SETTING               #

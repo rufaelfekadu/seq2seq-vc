@@ -24,7 +24,7 @@ from seq2seq_vc.utils import read_hdf5, write_hdf5
 from seq2seq_vc.utils.plot import plot_attention, plot_generated_and_ref_2d, plot_1d
 from seq2seq_vc.vocoder import Vocoder
 from seq2seq_vc.vocoder.s3prl_feat2wav import S3PRL_Feat2Wav
-from seq2seq_vc.vocoder.encodec import EnCodec_decoder
+# from seq2seq_vc.vocoder.encodec import EnCodec_decoder
 from seq2seq_vc.utils.types import str2bool
 from seq2seq_vc.utils.duration_calculator import DurationCalculator
 

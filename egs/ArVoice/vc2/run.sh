@@ -16,7 +16,7 @@ n_jobs=8      # number of parallel jobs in feature extraction
 conf=conf/aas_vc.melmelmel.v1.yaml
 
 # dataset configuration
-db_root=downloads/ArVoice/ArVoice-syn
+db_root=/home/rufael/Projects/ArVoice-syn
 dumpdir=dump                # directory to dump full features
 srcspk=ar-XA-Wavenet-C                  # available speakers: "clb" "bdl"
 trgspk=ar-XA-Wavenet-D                  # available speakers: "slt" "rms"
@@ -47,6 +47,11 @@ checkpoint=""               # checkpoint path to be used for decoding
 # shellcheck disable=SC1091
 . utils/parse_options.sh || exit 1;
 
+train_set="train" # name of training data directory
+dev_set="dev"           # name of development data directory
+eval_set="test"         # name of evaluation data directory
+
+
 set -euo pipefail
 
 # sanity check for norm_name and pretrained_model_checkpoint
@@ -70,30 +75,34 @@ else
     trg_stats="${pretrained_model_dir}/stats.${stats_ext}"
 fi
 
-if [ ${stage} -le -1 ] && [ ${stop_stage} -ge -1 ]; then
-    echo "stage -1: Data & Pretrained Model Download"
+# if [ ${stage} -le -1 ] && [ ${stop_stage} -ge -1 ]; then
+#     echo "stage -1: Data & Pretrained Model Download"
 
-    # download dataset
-    # local/data_download.sh "downloads"
+#     # download dataset
+#     # local/data_download.sh "downloads"
 
-    # download pretrained vocoder
-    utils/hf_download.py --repo_id "unilight/hificaptain-vc" --outdir "downloads" --filename "pwg_jp_female/checkpoint-400000steps.pkl"
-    utils/hf_download.py --repo_id "unilight/hificaptain-vc" --outdir "downloads" --filename "pwg_jp_female/config.yml"
-    utils/hf_download.py --repo_id "unilight/hificaptain-vc" --outdir "downloads" --filename "pwg_jp_female/stats.h5"
+#     # download pretrained vocoder
+#     utils/hf_download.py --repo_id "unilight/hificaptain-vc" --outdir "downloads" --filename "pwg_jp_female/checkpoint-400000steps.pkl"
+#     utils/hf_download.py --repo_id "unilight/hificaptain-vc" --outdir "downloads" --filename "pwg_jp_female/config.yml"
+#     utils/hf_download.py --repo_id "unilight/hificaptain-vc" --outdir "downloads" --filename "pwg_jp_female/stats.h5"
 
-    # download pretrained aas model
-    utils/hf_download.py --repo_id "unilight/hificaptain-vc" --outdir "exp" --filename "male_female_aas_vc_mel_pretrained/checkpoint-50000steps.pkl"
-    utils/hf_download.py --repo_id "unilight/hificaptain-vc" --outdir "exp" --filename "male_female_aas_vc_mel_pretrained/config.yml"
-    utils/hf_download.py --repo_id "unilight/hificaptain-vc" --outdir "exp" --filename "male_female_aas_vc_mel_pretrained/stats.h5"
-fi
+#     # download pretrained aas model
+#     utils/hf_download.py --repo_id "unilight/hificaptain-vc" --outdir "exp" --filename "male_female_aas_vc_mel_pretrained/checkpoint-50000steps.pkl"
+#     utils/hf_download.py --repo_id "unilight/hificaptain-vc" --outdir "exp" --filename "male_female_aas_vc_mel_pretrained/config.yml"
+#     utils/hf_download.py --repo_id "unilight/hificaptain-vc" --outdir "exp" --filename "male_female_aas_vc_mel_pretrained/stats.h5"
+# fi
 
 if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ]; then
     echo "stage 0: Data preparation"
     for spk in ${srcspk} ${trgspk}; do
         local/data_prep.sh \
-            --train_set "train" \
-            --dev_set "dev" \
-            --eval_set "test" \
+            --fs "$(yq ".sampling_rate" "${conf}")" \
+            --shuffle "${shuffle}" \
+            --num_dev "${num_dev}" \
+            --num_eval "${num_eval}" \
+            --train_set "${spk}_${train_set}" \
+            --dev_set "${spk}_${dev_set}" \
+            --eval_set "${spk}_${eval_set}" \
             "${db_root}" "${spk}" data
     done
 fi
@@ -110,7 +119,7 @@ if [ "${stage}" -le 1 ] && [ "${stop_stage}" -ge 1 ]; then
 
     # extract raw features
     pids=()
-    for name in "${srcspk}_train" "${srcspk}_dev" "${srcspk}_test" "${trgspk}_train" "${trgspk}_dev" "${trgspk}_test"; do
+    for name in "${srcspk}_${train_set}" "${srcspk}_${dev_set}" "${srcspk}_${eval_set}" "${trgspk}_${train_set}" "${trgspk}_${eval_set}" "${trgspk}_${test_set}"; do
     (
         [ ! -e "${dumpdir}/${name}/raw" ] && mkdir -p "${dumpdir}/${name}/raw"
         echo "Feature extraction start. See the progress via ${dumpdir}/${name}/raw/preprocessing.*.log."
@@ -137,7 +146,7 @@ if [ "${stage}" -le 2 ] && [ "${stop_stage}" -ge 2 ]; then
         # calculate statistics for normalization
 
         # src
-        name="${srcspk}_train"
+        name="${srcspk}_${train_set}"
         echo "Statistics computation start. See the progress via ${dumpdir}/${name}/compute_statistics_${src_feat}.log."
         ${train_cmd} "${dumpdir}/${name}/compute_statistics_${src_feat}.log" \
             compute_statistics.py \
@@ -148,7 +157,7 @@ if [ "${stage}" -le 2 ] && [ "${stop_stage}" -ge 2 ]; then
                 --verbose "${verbose}"
 
         # trg
-        name="${trgspk}_train"
+        name="${trgspk}_${train_set}"
         echo "Statistics computation start. See the progress via ${dumpdir}/${name}/compute_statistics_${trg_feat}.log."
         ${train_cmd} "${dumpdir}/${name}/compute_statistics_${trg_feat}.log" \
             compute_statistics.py \
@@ -169,7 +178,7 @@ if [ "${stage}" -le 2 ] && [ "${stop_stage}" -ge 2 ]; then
     # normalize and dump them
     # src
     spk="${srcspk}"
-    for name in "${spk}_train" "${spk}_dev" "${spk}_test"; do
+    for name in "${spk}_${train_set}" "${spk}_${dev_}" "${spk}_${eval_set}"; do
     (
         [ ! -e "${dumpdir}/${name}/norm_${norm_name}" ] && mkdir -p "${dumpdir}/${name}/norm_${norm_name}"
         echo "Nomalization start. See the progress via ${dumpdir}/${name}/norm_${norm_name}/normalize_${src_feat}.*.log."
@@ -192,7 +201,7 @@ if [ "${stage}" -le 2 ] && [ "${stop_stage}" -ge 2 ]; then
 
     # trg
     spk="${trgspk}"
-    for name in "${spk}_train" "${spk}_dev" "${spk}_test"; do
+    for name in "${spk}_${train_set}" "${spk}_${dev_set}" "${spk}_${eval_set}"; do
     (
         [ ! -e "${dumpdir}/${name}/norm_${norm_name}" ] && mkdir -p "${dumpdir}/${name}/norm_${norm_name}"
         echo "Nomalization start. See the progress via ${dumpdir}/${name}/norm_${norm_name}/normalize_${trg_feat}.*.log."

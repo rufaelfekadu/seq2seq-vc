@@ -1,12 +1,14 @@
 #!/bin/bash
 
-# Copyright 2022 Wen-Chin Huang (Nagoya University)
+# Copyright 2020 Tomoki Hayashi
 #  MIT License (https://opensource.org/licenses/MIT)
 
 # shellcheck disable=SC1091
 . ./path.sh || exit 1;
 
-fs=48000
+fs=24000
+num_dev=5
+num_eval=5
 train_set="train_nodev"
 dev_set="dev"
 eval_set="eval"
@@ -21,99 +23,120 @@ data_dir=$3
 
 # check arguments
 if [ $# != 3 ]; then
-    echo "Usage: $0 <db_root> <spk> <data_dir>"
-    echo "e.g.: $0 downloads/cms_us_slt_arctic slt data"
+    echo "Usage: $0 [Options] <db_root> <spk> <data_dir>"
     echo ""
     echo "Options:"
+    echo "    --fs: target sampling rate (default=22050)."
+    echo "    --num_dev: number of development uttreances (default=10)."
+    echo "    --num_eval: number of evaluation uttreances (default=10)."
     echo "    --train_set: name of train set (default=train_nodev)."
     echo "    --dev_set: name of dev set (default=dev)."
     echo "    --eval_set: name of eval set (default=eval)."
+    echo "    --shuffle: whether to perform shuffule to make dev & eval set (default=true)."
     exit 1
 fi
 
 set -euo pipefail
 
-for set_name in ${train_set} ${dev_set} ${eval_set}; do
+# check spk existence
+[ ! -e "${db_root}/${spk}" ] && \
+    echo "${spk} does not exist." >&2 && exit 1;
+
+[ ! -e "${data_dir}/all_${spk}" ] && mkdir -p "${data_dir}/all_${spk}"
+[ ! -e "${data_dir}/test_${spk}" ] && mkdir -p "${data_dir}/test_${spk}"
+[ ! -e "${data_dir}/non_test_${spk}" ] && mkdir -p "${data_dir}/non_test_${spk}"
+
+# set filenames
+scp="${data_dir}/all_${spk}/wav.scp"
+test_scp="${data_dir}/test_${spk}/wav.scp"
+non_test_scp="${data_dir}/non_test_${spk}/wav.scp"
+
+# check file existence
+[ -e "${scp}" ] && rm "${scp}"
+[ -e "${test_scp}" ] && rm "${test_scp}"
+[ -e "${non_test_scp}" ] && rm "${non_test_scp}"
+
+# make all scp
+find "${db_root}/${spk}" -follow -name "*.wav" | sort | while read -r filename; do
+    id=$(basename "${filename}" | sed -e "s/\.[^\.]*$//g")
+    echo "${id} cat ${filename} | sox -t wav - -c 1 -b 16 -t wav - rate ${fs} |" >> "${scp}"
     
-    [ ! -e "${data_dir}/${spk}_${set_name}" ] && mkdir -p "${data_dir}/${spk}_${set_name}"
-    
-    # set filenames
-    scp="${data_dir}/${spk}_${set_name}/wav.scp"
-    text="${data_dir}/${spk}_${set_name}/text"
-    utt2spk="${data_dir}/${spk}_${set_name}/utt2spk"
-    
-    # check file existence
-    [ -e "${scp}" ] && rm "${scp}"
-    [ -e "${text}" ] && rm "${text}"
-    [ -e "${utt2spk}" ] && rm "${utt2spk}"
-    
-    # Read from metadata.csv
-    metadata="${db_root}/metadata.csv"
-    
-    # Check if metadata file exists
-    if [ ! -f "${metadata}" ]; then
-        echo "Error: Metadata file ${metadata} does not exist"
-        exit 1
+    # Separate test files and non-test files
+    if [[ "${filename}" == *"test"* ]]; then
+        echo "${id} cat ${filename} | sox -t wav - -c 1 -b 16 -t wav - rate ${fs} |" >> "${test_scp}"
+    else
+        echo "${id} cat ${filename} | sox -t wav - -c 1 -b 16 -t wav - rate ${fs} |" >> "${non_test_scp}"
     fi
-    
-    # Skip header if present
-    { tail -n +2 "${metadata}" 2>/dev/null || cat "${metadata}"; } | while IFS=, read -r path txt speaker; do
-        # Remove quotes if present
-        # path=$(echo "${path}" | sed 's/^"\(.*\)"$/\1/')
-        # txt=$(echo "${txt}" | sed 's/^"\(.*\)"$/\1/')
-        # speaker=$(echo "${speaker}" | sed 's/^"\(.*\)"$/\1/')
-        # if speaker is different, skip
-        if [ "${speaker}" != "${spk}" ]; then
-            continue
-        fi
-
-        # if set_name not in path
-        if [[ ! "${path}" == *"${set_name}"* ]]; then
-            continue
-        fi
-        # Create ID from filename, split the basename using + as delimiter and take the second part
-        id=$(basename "${path}" .wav)
-        id=$(echo "${id}" | cut -d'+' -f2)
-
-
-        # Check if file exists
-        if [ -f "${db_root}/${path}" ]; then
-            echo "${id} cat ${db_root}/${path} | sox -t wav - -c 1 -b 16 -t wav - rate ${fs} |" >> "${scp}"
-            echo "${id} ${txt}" >> "${text}"
-            echo "${id} ${speaker}" >> "${utt2spk}"
-        else
-            echo "Warning: File ${db_root}/${path} not found"
-        fi
-    done
-    
-    echo "Successfully prepared  ${spk} ${set_name} data."
 done
 
-# Create the dev set if it doesn't exist
-# Check if the dev set is empty (doesn't exist or has no wav.scp)
-if [ ! -d "${data_dir}/${spk}_${dev_set}" ] || [ ! -s "${data_dir}/${spk}_${dev_set}/wav.scp" ]; then
-    echo "Creating dev set from training data..."
-    # Create temporary merged scp
-    tmp_scp=$(mktemp)
-    cat "${data_dir}/${spk}_${train_set}/wav.scp" > "${tmp_scp}"
+# Get the number of test files
+num_test=$(wc -l < "${test_scp}")
+echo "Found ${num_test} test files."
+
+# If we have enough test files, use them directly
+if [ ${num_test} -ge ${num_eval} ]; then
+    # Split non-test files into train and dev
+    num_non_test=$(wc -l < "${non_test_scp}")
+    num_train=$((num_non_test - num_dev))
     
-    num_all=$(wc -l < "${tmp_scp}")
-    num_dev=$((num_all / 10))
-    num_train=$((num_all - num_dev))
-    
-    # Create directory for dev set
-    mkdir -p "${data_dir}/${spk}_${dev_set}"
-    
+    # Split non-test files into train and dev
     utils/split_data.sh \
         --num_first "${num_train}" \
         --num_second "${num_dev}" \
         --shuffle "${shuffle}" \
-        "${data_dir}/${spk}_${train_set}" \
-        "${data_dir}/${spk}_${train_set}_temp" \
-        "${data_dir}/${spk}_${dev_set}"
-        
-    rm "${tmp_scp}"
-
-    # rename train set
-    mv "${data_dir}/${spk}_${train_set}_temp" "${data_dir}/${spk}_${train_set}"
+        "${data_dir}/non_test_${spk}" \
+        "${data_dir}/${train_set}" \
+        "${data_dir}/${dev_set}"
+    
+    # Use test files for eval
+    if [ ${num_test} -gt ${num_eval} ]; then
+        # If we have more test files than needed, take a subset
+        mkdir -p "${data_dir}/${eval_set}"
+        head -n ${num_eval} "${test_scp}" > "${data_dir}/${eval_set}/wav.scp"
+    else
+        # If we have exactly the right number, just copy
+        cp -r "${data_dir}/${spk}_test" "${data_dir}/${eval_set}"
+    fi
+else
+    # Not enough test files, fall back to original split method
+    echo "Warning: Not enough files with 'test' in their name (found ${num_test}, needed ${num_eval})."
+    echo "Falling back to random splitting."
+    
+    num_all=$(wc -l < "${scp}")
+    num_deveval=$((num_dev + num_eval))
+    num_train=$((num_all - num_deveval))
+    
+    if [ ${num_eval} -ne 0 ]; then
+        utils/split_data.sh \
+            --num_first "${num_train}" \
+            --num_second "${num_deveval}" \
+            --shuffle "${shuffle}" \
+            "${data_dir}/all_${spk}" \
+            "${data_dir}/${train_set}" \
+            "${data_dir}/deveval_${spk}"
+        utils/split_data.sh \
+            --num_first "${num_dev}" \
+            --num_second "${num_eval}" \
+            --shuffle "${shuffle}" \
+            "${data_dir}/deveval_${spk}" \
+            "${data_dir}/${dev_set}" \
+            "${data_dir}/${eval_set}"
+    else
+        utils/split_data.sh \
+            --num_first "${num_train}" \
+            --num_second "${num_deveval}" \
+            --shuffle "${shuffle}" \
+            "${data_dir}/all_${spk}" \
+            "${data_dir}/${train_set}" \
+            "${data_dir}/${dev_set}"
+        cp -r "${data_dir}/${dev_set}" "${data_dir}/${eval_set}"
+    fi
 fi
+
+# remove tmp directories
+rm -rf "${data_dir}/all_${spk}"
+rm -rf "${data_dir}/deveval_${spk}"
+rm -rf "${data_dir}/test_${spk}"
+rm -rf "${data_dir}/non_test_${spk}"
+
+echo "Successfully prepared data."

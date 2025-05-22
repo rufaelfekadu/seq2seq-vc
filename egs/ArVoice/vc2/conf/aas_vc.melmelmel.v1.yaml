@@ -84,20 +84,20 @@ lambda_align: 2.0
 ###########################################################
 #                   INFERENCE SETTING                     #
 ###########################################################
-# vocoder:
-#     checkpoint: ./downloads/pwg_jp_female/checkpoint-400000steps.pkl
-#     config: ./downloads/pwg_jp_female/config.yml
-#     stats: ./downloads/pwg_jp_female/stats.h5
+vocoder:
+    checkpoint: ./downloads/arvoice-syn-wavenet-vocoder/checkpoint-400000steps.pkl
+    config: ./downloads/arvoice-syn-wavenet-vocoder/config.yml
+    stats: ./downloads/arvoice-syn-wavenet-vocoder/stats.h5
 
 ###########################################################
 #                  DATA LOADER SETTING                    #
 ###########################################################
-batch_size: 8                 # Batch size.
+batch_size: 1                 # Batch size.
 pin_memory: true                # Whether to pin memory in Pytorch DataLoader.
 num_workers: 0                  # Number of workers in Pytorch DataLoader.
 allow_cache: true               # Whether to allow cache in dataset. If true, it requires cpu memory.
 mp: false                       # Setting this to false avoids error in multi-gpu machines.
-gradient_accumulate_steps: 1    # Number of forward steps before a backward step. Used when OOM happens.
+gradient_accumulate_steps: 8    # Number of forward steps before a backward step. Used when OOM happens.
 
 ###########################################################
 #             OPTIMIZER & SCHEDULER SETTING               #
@@ -116,7 +116,7 @@ scheduler_params:
 train_max_steps: 50000                 # Number of training steps.
 dp_train_start_steps: 0                 # Duration predictor training starting step. Default set to 0.
 save_interval_steps: 5000               # Interval steps to save checkpoint.
-eval_interval_steps: 100                # Interval steps to evaluate the network.
+eval_interval_steps: 1000                # Interval steps to evaluate the network.
 log_interval_steps: 10                  # Interval steps to record the training log.
 
 ###########################################################

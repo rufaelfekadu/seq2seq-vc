@@ -1,6 +1,12 @@
-male:
-  f0min: 40
-  f0max: 290
-female:
-  f0min: 90
-  f0max: 440
+ar-XA-Wavenet-A:
+  f0min: 75
+  f0max: 600
+ar-XA-Wavenet-B:
+  f0min: 75
+  f0max: 600
+ar-XA-Wavenet-C:
+  f0min: 74
+  f0max: 600
+ar-XA-Wavenet-D:
+  f0min: 80
+  f0max: 600

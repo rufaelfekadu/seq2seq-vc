@@ -16,10 +16,10 @@ n_jobs=8      # number of parallel jobs in feature extraction
 conf=conf/aas_vc.melmelmel.v1.yaml
 
 # dataset configuration
-db_root=/home/rufael/Projects/ArVoice-syn
+db_root=/workspace/ArVoice-syn
 dumpdir=dump                # directory to dump full features
-srcspk=ar-XA-Wavenet-C                  # available speakers: "clb" "bdl"
-trgspk=ar-XA-Wavenet-D                  # available speakers: "slt" "rms"
+srcspk=ar-XA-Wavenet-B                  # available speakers: "clb" "bdl"
+trgspk=ar-XA-Wavenet-C                  # available speakers: "slt" "rms"
 stats_ext=h5
 norm_name=self                  # used to specify normalized data.
                             # Ex: `judy` for normalization with pretrained model, `self` for self-normalization
@@ -36,7 +36,7 @@ pretrained_model_checkpoint=
 
 # training related setting
 tag=""     # tag for directory to save model
-resume=""  # checkpoint path to resume training
+resume="/workspace/seq2seq-vc/egs/ArVoice/vc2/exp/ar-XA-Wavenet-B_ar-XA-Wavenet-C_male_male/checkpoint-10632steps.pkl"  # checkpoint path to resume training
            # (e.g. <path>/<to>/checkpoint-10000steps.pkl)
            
 # decoding related setting
@@ -50,8 +50,9 @@ checkpoint=""               # checkpoint path to be used for decoding
 train_set="train" # name of training data directory
 dev_set="dev"           # name of development data directory
 eval_set="test"         # name of evaluation data directory
-
-
+shuffle=false
+num_dev=50
+num_eval=50
 set -euo pipefail
 
 # sanity check for norm_name and pretrained_model_checkpoint
@@ -119,7 +120,7 @@ if [ "${stage}" -le 1 ] && [ "${stop_stage}" -ge 1 ]; then
 
     # extract raw features
     pids=()
-    for name in "${srcspk}_${train_set}" "${srcspk}_${dev_set}" "${srcspk}_${eval_set}" "${trgspk}_${train_set}" "${trgspk}_${eval_set}" "${trgspk}_${test_set}"; do
+    for name in "${srcspk}_${train_set}" "${srcspk}_${dev_set}" "${srcspk}_${eval_set}" "${trgspk}_${train_set}" "${trgspk}_${dev_set}" "${trgspk}_${eval_set}"; do
     (
         [ ! -e "${dumpdir}/${name}/raw" ] && mkdir -p "${dumpdir}/${name}/raw"
         echo "Feature extraction start. See the progress via ${dumpdir}/${name}/raw/preprocessing.*.log."
@@ -178,7 +179,7 @@ if [ "${stage}" -le 2 ] && [ "${stop_stage}" -ge 2 ]; then
     # normalize and dump them
     # src
     spk="${srcspk}"
-    for name in "${spk}_${train_set}" "${spk}_${dev_}" "${spk}_${eval_set}"; do
+    for name in "${spk}_${train_set}" "${spk}_${dev_set}" "${spk}_${eval_set}"; do
     (
         [ ! -e "${dumpdir}/${name}/norm_${norm_name}" ] && mkdir -p "${dumpdir}/${name}/norm_${norm_name}"
         echo "Nomalization start. See the progress via ${dumpdir}/${name}/norm_${norm_name}/normalize_${src_feat}.*.log."

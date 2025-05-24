@@ -95,7 +95,8 @@ if [ ${num_test} -ge ${num_eval} ]; then
         head -n ${num_eval} "${test_scp}" > "${data_dir}/${eval_set}/wav.scp"
     else
         # If we have exactly the right number, just copy
-        cp -r "${data_dir}/${spk}_test" "${data_dir}/${eval_set}"
+        mkdir -p "${data_dir}/${eval_set}"
+        mv "$test_scp" "${data_dir}/${eval_set}/"
     fi
 else
     # Not enough test files, fall back to original split method

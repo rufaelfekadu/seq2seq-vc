@@ -18,8 +18,8 @@ conf=conf/aas_vc.melmelmel.v1.yaml
 # dataset configuration
 db_root=/workspace/ArVoice-syn
 dumpdir=dump                # directory to dump full features
-srcspk=ar-XA-Wavenet-B                  # available speakers: "clb" "bdl"
-trgspk=ar-XA-Wavenet-C                  # available speakers: "slt" "rms"
+srcspk=ar-XA-Wavenet-C                  # available speakers: "clb" "bdl"
+trgspk=ar-XA-Wavenet-D                  # available speakers: "slt" "rms"
 stats_ext=h5
 norm_name=self                  # used to specify normalized data.
                             # Ex: `judy` for normalization with pretrained model, `self` for self-normalization

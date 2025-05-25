@@ -28,6 +28,7 @@ import pyarabic.araby as araby
 
 from speechbrain.inference import EncoderClassifier, SpeakerRecognition
 from speechbrain.utils.metric_stats import BinaryMetricStats
+from speechbrain.utils.metric_stats import EER
 
 
 ASR_PRETRAINED_MODEL = "clu-ling/whisper-large-v2-arabic-5k-steps"
@@ -96,6 +97,8 @@ def calculate_measures(groundtruth, transcription):
 def get_basename(path):
     return os.path.splitext(os.path.split(path)[-1])[0]
 
+def get_speaker(path):
+    return os.path.dirname(path).split("/")[-1] 
 # def gen_embedings(gt_root, converted_files):
 #     classifier = EncoderClassifier.from_hparams(source="speechbrain/spkrec-ecapa-voxceleb")
 #     embeddings = {
@@ -122,10 +125,10 @@ def get_basename(path):
 
 #     return embeddings
 
-def compute_eer(source_root, gt_root, converted_files, other_spk_dir):
+def compute_eer(trg_spk, source_root, gt_root, converted_files, other_spk_dir):
     
     eer_calculator = BinaryMetricStats()
-    verification = SpeakerRecognition.from_hparams(source="speechbrain/spkrec-ecapa-voxceleb", savedir="pretrained_models/spkrec-ecapa-voxceleb", run_opts={"device":"cuda"})
+    verification = SpeakerRecognition.from_hparams(source="speechbrain/spkrec-ecapa-voxceleb", savedir="downloads/spkrec-ecapa-voxceleb", run_opts={"device":"cuda"})
     
     ref_files = find_files(gt_root, query="*.wav")
     ref_files = [f for f in ref_files if "test" in f]
@@ -135,46 +138,54 @@ def compute_eer(source_root, gt_root, converted_files, other_spk_dir):
     other_spk_files = find_files(other_spk_dir, query="*.wav")
     other_spk_files = [f for f in other_spk_files if "test" in f]
 
-    # sample len(conv_files) smaples from other spk files
-    other_spk_files = np.random.choice(other_spk_files, len(converted_files), replace=False)
+    # filter out the target speaker files
+    other_spk_files = [f for f in other_spk_files if trg_spk != get_speaker(f)]
+    other_tgt_files = [f for f in other_spk_files if trg_spk == get_speaker(f)]
+
+    if len(other_spk_files) > len(converted_files):
+        print(f"Warning: There are more other speaker files ({len(other_spk_files)}) than converted files ({len(converted_files)}). Randomly selecting {len(converted_files)} other speaker files.")
+        other_spk_files = np.random.choice(other_spk_files, size=len(converted_files), replace=False).tolist()
 
     pairs = []
     for i, cv_path in enumerate(converted_files):
         basename = get_basename(cv_path)
-        # positive pair gen gen
-        for j, cv_path2 in enumerate(converted_files):
-            if get_basename(cv_path2) == basename:
-                continue
-            pairs.append((cv_path2, cv_path, 1))
+
+        # # positive pair gen gen
+        # for j, cv_path2 in enumerate(converted_files):
+        #     if get_basename(cv_path2) == basename:
+        #         continue
+        #     pairs.append((cv_path2, cv_path, 1))
 
         # positive pairs gen gt
-        # for j, ref_path in enumerate(ref_files):
-        #     if (basename == get_basename(ref_path)) or "test" not in ref_path:
-        #         continue
-        #     pairs.append((cv_path, ref_path, 1))
+        for j, ref_path in enumerate(other_tgt_files):
+            if (basename == get_basename(ref_path)):
+                continue
+            pairs.append((cv_path, ref_path, 1))
         
         # negative pairs gen other
-        for k, source_path in enumerate(other_spk_files):
-            if basename == get_basename(source_path) or "test" not in source_path:
+        for k, other_spk_path in enumerate(other_spk_files):
+            if basename == get_basename(other_spk_path): 
                 continue
-            pairs.append((cv_path, source_path, 0))
+            pairs.append((cv_path, other_spk_path, 0))
         
         # # negative pairs gt other
         # for k, source_path in enumerate(other_spk_files):
         #     if get_basename(cv_path) == get_basename(source_path) or "test" not in source_path:
         #         continue
         #     pairs.append((cv_path, source_path, 0))
-
-    print(f"Number of pairs: {len(pairs)}, num_positive: {j} num_negative: {k}")
+    
     correct = 0
     for i, (cv_path, ref_path, label) in enumerate(tqdm(pairs, desc="Computing EER")):
         p_score, p_pred = verification.verify_files(ref_path, cv_path)
         correct += (p_pred == label).sum().item()
+
+        # breakpoint()
         eer_calculator.append(
-            [0],
-            torch.tensor(p_score).unsqueeze(0),
-            torch.tensor(label).unsqueeze(0)
+            [f"{get_basename(cv_path)}_{get_basename(ref_path)}"],
+            [p_score.item()],
+            [label],
         )
+
     acc = correct / len(pairs)
 
     print(f"Accuracy: {acc}")
@@ -319,7 +330,7 @@ def main():
     # generate embedings
     # embeddings = gen_embedings(gt_root, converted_files)
     # calculate EER
-    eer = compute_eer(args.src_root, gt_root, converted_files, args.other_spk_dir)
+    eer = compute_eer(trgspk, args.src_root, gt_root, converted_files, args.other_spk_dir)
 
     ##############################
 

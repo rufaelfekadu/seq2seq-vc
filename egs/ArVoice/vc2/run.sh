@@ -18,6 +18,7 @@ conf=conf/aas_vc.melmelmel.v1.yaml
 # dataset configuration
 db_root=/workspace/ArVoice-syn
 dumpdir=dump                # directory to dump full features
+exp_root=exp                # directory to save model and results
 srcspk=ar-XA-Wavenet-C                  # available speakers: "clb" "bdl"
 trgspk=ar-XA-Wavenet-D                  # available speakers: "slt" "rms"
 stats_ext=h5
@@ -229,7 +230,7 @@ if [ -z ${tag} ]; then
 else
     expname=${srcspk}_${trgspk}_${tag}
 fi
-expdir=exp/${expname}
+expdir=${exp_root}/${expname}
 if [ "${stage}" -le 3 ] && [ "${stop_stage}" -ge 3 ]; then
     echo "Stage 3: Network training"
     [ ! -e "${expdir}" ] && mkdir -p "${expdir}"

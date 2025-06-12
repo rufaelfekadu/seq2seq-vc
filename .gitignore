@@ -129,7 +129,7 @@ dmypy.json
 .pyre/
 
 exp/
-downloads/
+**downloads**
 dump/
 data/
 dump_temp/

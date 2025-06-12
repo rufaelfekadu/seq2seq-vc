@@ -30,7 +30,7 @@ import seq2seq_vc.losses
 import seq2seq_vc.trainers
 import seq2seq_vc.collaters
 
-from seq2seq_vc.datasets import ParallelVCMelDataset
+from seq2seq_vc.datasets import ParallelVCMelDataset, ParallelVCMelDatasetManyToOne
 
 from seq2seq_vc.utils import read_hdf5
 from seq2seq_vc.utils.types import str_or_none
@@ -265,8 +265,8 @@ def main():
         )  # NOQA
     else:
         raise ValueError("support only hdf5 format.")
-    train_dataset = ParallelVCMelDataset(
-        src_root_dir=args.src_train_dumpdir,
+    train_dataset = ParallelVCMelDatasetManyToOne(
+        src_root_dirs=args.src_train_dumpdir,
         trg_root_dir=args.trg_train_dumpdir,
         mel_query=mel_query,
         src_load_fn=src_mel_load_fn,
@@ -280,8 +280,8 @@ def main():
         mp=config.get("mp", True),  # keep compatibility
     )
     logging.info(f"The number of training files = {len(train_dataset)}.")
-    dev_dataset = ParallelVCMelDataset(
-        src_root_dir=args.src_dev_dumpdir,
+    dev_dataset = ParallelVCMelDatasetManyToOne(
+        src_root_dirs=args.src_dev_dumpdir,
         trg_root_dir=args.trg_dev_dumpdir,
         mel_query=mel_query,
         src_load_fn=src_mel_load_fn,

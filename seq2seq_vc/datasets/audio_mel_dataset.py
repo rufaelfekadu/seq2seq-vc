@@ -12,6 +12,7 @@ from multiprocessing import Manager
 
 import numpy as np
 
+import torch
 from torch.utils.data import Dataset
 
 from seq2seq_vc.utils import find_files, read_hdf5, get_basename
@@ -145,7 +146,6 @@ class AudioMelDataset(Dataset):
         """
         return len(self.audio_files)
 
-
 class AudioDataset(Dataset):
     """PyTorch compatible audio dataset."""
 
@@ -244,7 +244,6 @@ class AudioDataset(Dataset):
         """
         return len(self.audio_files)
 
-
 class MelDataset(Dataset):
     """PyTorch compatible mel dataset."""
 
@@ -341,7 +340,6 @@ class MelDataset(Dataset):
 
         """
         return len(self.mel_files)
-
 
 class ParallelVCMelDataset(Dataset):
     """PyTorch compatible mel-to-mel dataset for parallel VC."""
@@ -501,7 +499,6 @@ class ParallelVCMelDataset(Dataset):
         """
         return len(self.mel_files)
 
-
 class SourceVCMelDataset(Dataset):
     """PyTorch compatible mel dataset for VC.
     Contains source side mel only, mainly designed for evaluation.
@@ -601,3 +598,182 @@ class SourceVCMelDataset(Dataset):
 
         """
         return len(self.src_mel_files)
+
+class ParallelVCMelDatasetManyToOne(Dataset):
+    """PyTorch compatible mel-to-mel dataset for parallel VC. with many-to-one mapping."""
+
+    def __init__(
+        self,
+        src_root_dirs,
+        trg_root_dir,
+        mel_query="*-feats.npy",
+        src_load_fn=np.load,
+        trg_load_fn=np.load,
+        dp_input_root_dir=None,
+        dp_input_query="*.h5",
+        dp_input_load_fn=np.load,
+        durations_dir=None,
+        duration_query="*.txt",
+        reduction_factor: int = 1,
+        return_utt_id=False,
+        allow_cache=False,
+        mp=True,
+    ):
+        """Initialize dataset.
+
+        Args:
+            src_root_dir (str): Root directory including dumped files for the source.
+            trg_root_dir (str): Root directory including dumped files for the target.
+            mel_query (str): Query to find feature files in root_dir.
+            src_load_fn (func): Function to load source feature files.
+            trg_load_fn (func): Function to load target feature files.
+            dp_input_root_dir (str): Root directory including dumped files for the dp input.
+            dp_input_load_fn (func): Function to load feature files for dp.
+            durations_dir (str): Root directory including duration files.
+            duration_query (str): Query to find duration files in src/trg_durations_dir.
+            return_utt_id (bool): Whether to return the utterance id with arrays.
+            allow_cache (bool): Whether to allow cache of the loaded files.
+
+        """
+        # find all of the mel files
+        src_mel_files = {}
+        spk_embs = {}
+        spks = []
+        for src_root_dir in src_root_dirs.split(","):
+            spk_dir = os.path.dirname(src_root_dir)
+            cur_spk = spk_dir.replace("_train", "").replace("_dev", "").replace("_test", "").split("/")[-1]
+            spks.append(cur_spk)
+            src_mel_files[cur_spk] = sorted(find_files(src_root_dir, mel_query))
+            spk_embs[cur_spk] = os.path.join(spk_dir, "spemb.h5")
+            assert os.path.exists(spk_embs[cur_spk]), f"Speaker embedding file {spk_embs[cur_spk]} does not exist. {cur_spk}"
+            
+
+        trg_mel_files = sorted(find_files(trg_root_dir, mel_query))
+
+        # assert the number of files
+        assert len(src_mel_files) != 0, f"Not found any mel files in ${src_root_dirs}."
+        assert len(trg_mel_files) != 0, f"Not found any mel files in ${trg_root_dir}."
+
+        # convert src_mel_files to a list 
+        self.src_mel_files = sorted([file for spk in spks for file in src_mel_files[spk]])
+        self.spk_embs = spk_embs
+        self.trg_mel_files = trg_mel_files
+        self.src_load_fn = src_load_fn
+        self.trg_load_fn = trg_load_fn
+        self.dp_input_load_fn = dp_input_load_fn
+        self.emb_load_fn = lambda x: read_hdf5(x, "embeddings")
+
+        # make sure the utt ids match
+        src_utt_ids = sorted(
+            [os.path.splitext(os.path.basename(f))[0] for f in self.src_mel_files]
+        )
+        self.spk = ["_".join(utt_id.split("_")[:-1]) for utt_id in src_utt_ids]
+        trg_utt_ids = sorted(
+            [os.path.splitext(os.path.basename(f))[0] for f in trg_mel_files]
+        )
+        assert set(src_utt_ids) == set(
+            trg_utt_ids
+        ), f"{len(set(src_utt_ids))} {len(set(trg_utt_ids))}{set(src_utt_ids).difference(set(trg_utt_ids))}"
+        self.utt_ids = src_utt_ids
+
+        # use map(list, zip(...)) to get list of list
+        self.mel_files = list(map(list, zip(self.src_mel_files, self.trg_mel_files)))
+        
+        self.return_utt_id = return_utt_id
+        self.allow_cache = allow_cache
+        if allow_cache:
+            if mp:
+                # NOTE(kan-bayashi): Manager is need to share memory in dataloader with num_workers > 0
+                self.manager = Manager()
+                self.caches = self.manager.list()
+                self.caches += [() for _ in range(len(self.mel_files))]
+            else:
+                self.caches = [() for _ in range(len(self.mel_files))]
+
+        # load dp input feature files and zip with mel_files
+        if dp_input_root_dir is not None:
+            # find all dp input files
+            # dp_input_feat_files = sorted(find_files(dp_input_root_dir, dp_input_query))
+            # assert len(dp_input_feat_files) == len(self.mel_files)
+
+            # self.mel_files = [
+            #     v + [dp_input_feat_files[i]] for i, v in enumerate(self.mel_files)
+            # ]
+            self.use_dp_input = True
+        else:
+            self.use_dp_input = False
+
+        # load duration files, and zip with mel_files
+        if durations_dir is not None:
+            # find all duration files
+            duration_files = sorted(find_files(durations_dir, duration_query))
+            assert len(duration_files) == len(self.mel_files)
+
+            self.mel_files = [
+                v + [duration_files[i]] for i, v in enumerate(self.mel_files)
+            ]
+            self.use_durations = True
+            self.reduction_factor = reduction_factor
+        else:
+            self.use_durations = False
+    
+
+    def __getitem__(self, idx):
+        """Get specified idx items.
+
+        Args:
+            idx (int): Index of the item.
+
+        Returns:
+            str: Utterance id (only in return_utt_id = True).
+            ndarray: Feature (T', C).
+
+        """
+        if self.allow_cache and len(self.caches[idx]) != 0:
+            return self.caches[idx]
+
+        utt_id = self.utt_ids[idx]
+        src_mel = self.src_load_fn(self.mel_files[idx][0])
+        trg_mel = self.trg_load_fn(self.mel_files[idx][1])
+        spk_emb = self.emb_load_fn(self.spk_embs[self.spk[idx]])
+        # convert to tensor
+        if isinstance(spk_emb, np.ndarray):
+            spk_emb = torch.tensor(spk_emb, dtype=torch.float32)
+
+        items = {"src_feat": src_mel, "trg_feat": trg_mel, "spk_emb": spk_emb}
+
+        if self.use_dp_input:
+            # read dp input feat
+            dp_input = self.src_load_fn(self.mel_files[idx][0])
+            items["dp_input"] = dp_input
+
+        if self.use_durations:
+            # read durations if exists
+            with open(self.mel_files[idx][3], "r") as f:
+                lines = f.read().splitlines()
+                assert len(lines) == 1
+                durations = np.array([int(d) for d in lines[0].split(" ")])
+
+            # force the target to have the same length as the duration sum
+            total_length = np.sum(durations) * self.reduction_factor
+            trg_mel = trg_mel[:total_length]
+            items["duration"] = durations
+
+        items["trg_feat"] = trg_mel
+
+        if self.return_utt_id:
+            items["utt_id"] = utt_id
+
+        if self.allow_cache:
+            self.caches[idx] = items
+
+        return items
+
+    def __len__(self):
+        """Return dataset length.
+
+        Returns:
+            int: The length of dataset.
+
+        """
+        return len(self.mel_files)

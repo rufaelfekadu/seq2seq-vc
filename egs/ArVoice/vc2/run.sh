@@ -19,7 +19,8 @@ conf=conf/aas_vc.melmelmel.v1.yaml
 db_root=/workspace/ArVoice-syn
 dumpdir=dump                # directory to dump full features
 exp_root=exp                # directory to save model and results
-srcspk=ar-XA-Wavenet-C                  # available speakers: "clb" "bdl"
+srcspk="female_ab,female_ad,male_aa,male_ac"              # available speakers, comma-separated list
+                                       # examples: "ar-XA-Wavenet-C,ar-XA-Wavenet-B" or "ar-XA-Wavenet-C"
 trgspk=ar-XA-Wavenet-D                  # available speakers: "slt" "rms"
 stats_ext=h5
 norm_name=self                  # used to specify normalized data.
@@ -37,7 +38,7 @@ pretrained_model_checkpoint=
 
 # training related setting
 tag=""     # tag for directory to save model
-resume="/workspace/seq2seq-vc/egs/ArVoice/vc2/exp/ar-XA-Wavenet-B_ar-XA-Wavenet-C_male_male/checkpoint-10632steps.pkl"  # checkpoint path to resume training
+resume=""  # checkpoint path to resume training
            # (e.g. <path>/<to>/checkpoint-10000steps.pkl)
            
 # decoding related setting
@@ -52,9 +53,11 @@ train_set="train" # name of training data directory
 dev_set="dev"           # name of development data directory
 eval_set="test"         # name of evaluation data directory
 shuffle=false
-num_dev=50
-num_eval=50
+num_dev=20
+num_eval=100
 set -euo pipefail
+
+srcspks=(${srcspk//,/ }) # convert comma-separated string to array
 
 # sanity check for norm_name and pretrained_model_checkpoint
 if [ -z ${norm_name} ]; then
@@ -65,7 +68,8 @@ elif [ ${norm_name} == "self" ]; then
         echo "You cannot specify pretrained_model_checkpoint and norm_name=self simultaneously."
         exit 1
     fi
-    src_stats="${dumpdir}/${srcspk}_train/stats.${stats_ext}"
+
+    # src_stats="${dumpdir}/${srcspk}_train/stats.${stats_ext}"
     trg_stats="${dumpdir}/${trgspk}_train/stats.${stats_ext}"
 else
     if [ -z ${pretrained_model_checkpoint} ]; then
@@ -96,7 +100,7 @@ fi
 
 if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ]; then
     echo "stage 0: Data preparation"
-    for spk in ${srcspk} ${trgspk}; do
+    for spk in "${srcspks[@]}" "${trgspk}"; do
         local/data_prep.sh \
             --fs "$(yq ".sampling_rate" "${conf}")" \
             --shuffle "${shuffle}" \
@@ -119,9 +123,15 @@ if [ "${stage}" -le 1 ] && [ "${stop_stage}" -ge 1 ]; then
         config_for_feature_extraction="${pretrained_model_dir}/config.yml"
     fi
 
+    datasets=()
+    for spk in "${srcspks[@]}" "${trgspk}"; do
+        datasets+=("${spk}_${train_set}")
+        datasets+=("${spk}_${dev_set}")
+        datasets+=("${spk}_${eval_set}")
+    done
     # extract raw features
     pids=()
-    for name in "${srcspk}_${train_set}" "${srcspk}_${dev_set}" "${srcspk}_${eval_set}" "${trgspk}_${train_set}" "${trgspk}_${dev_set}" "${trgspk}_${eval_set}"; do
+    for name in "${datasets[@]}"; do
     (
         [ ! -e "${dumpdir}/${name}/raw" ] && mkdir -p "${dumpdir}/${name}/raw"
         echo "Feature extraction start. See the progress via ${dumpdir}/${name}/raw/preprocessing.*.log."
@@ -142,21 +152,48 @@ if [ "${stage}" -le 1 ] && [ "${stop_stage}" -ge 1 ]; then
 fi
 
 if [ "${stage}" -le 2 ] && [ "${stop_stage}" -ge 2 ]; then
-    echo "Stage 2: Statistics computation (optional) and normalization"
+    echo "Stage 2: Computing Speaker Embeddings (optional)"
+    
+    for spk in "${srcspks[@]}" "${trgspk}"; do
+        name="${spk}_${train_set}"
+        [ ! -e "${dumpdir}/${name}" ] && mkdir -p "${dumpdir}/${name}"
+        echo "Speaker embedding computation start. See the progress via ${dumpdir}/${name}/compute_spembs.log."
+        CUDA_VISIBLE_DEVICES=0 ${cuda_cmd} --gpus "${n_gpus}" "${dumpdir}/${name}/compute_spembs.log" \
+            python local/embedding.py \
+                --wav_scp "data/${name}/wav.scp" \
+                --output_file "${dumpdir}/${name}/spemb.h5" \
+                --model_source "speechbrain/spkrec-ecapa-voxceleb" \
+                --verbose "${verbose}"
+        echo "Successfully finished speaker embedding computation of ${name} set."
+        # copy to dev and eval sets
+        for _set in "${dev_set}" "${eval_set}"; do
+            if [ ! -e "${dumpdir}/${spk}_${_set}" ]; then
+                mkdir -p "${dumpdir}/${spk}_${_set}"
+            fi
+            cp "${dumpdir}/${name}/spemb.h5" "${dumpdir}/${spk}_${_set}/spemb.h5"
+        done
+    done
+    
+
+fi
+
+if [ "${stage}" -le 3 ] && [ "${stop_stage}" -ge 3 ]; then
+    echo "Stage 3: Statistics computation (optional) and normalization"
 
     if [ ${norm_name} == "self" ]; then
-        # calculate statistics for normalization
 
-        # src
-        name="${srcspk}_${train_set}"
-        echo "Statistics computation start. See the progress via ${dumpdir}/${name}/compute_statistics_${src_feat}.log."
-        ${train_cmd} "${dumpdir}/${name}/compute_statistics_${src_feat}.log" \
-            compute_statistics.py \
-                --config "${conf}" \
-                --rootdir "${dumpdir}/${name}/raw" \
-                --dumpdir "${dumpdir}/${name}" \
-                --feat_type "${src_feat}" \
-                --verbose "${verbose}"
+        for srcspk in "${srcspks[@]}"; do
+            name="${srcspk}_${train_set}"
+            echo "Statistics computation start. See the progress via ${dumpdir}/${name}/compute_statistics_${src_feat}.log."
+            ${train_cmd} "${dumpdir}/${name}/compute_statistics_${src_feat}.log" \
+                compute_statistics.py \
+                    --config "${conf}" \
+                    --rootdir "${dumpdir}/${name}/raw" \
+                    --dumpdir "${dumpdir}/${name}" \
+                    --feat_type "${src_feat}" \
+                    --verbose "${verbose}"
+
+        done
 
         # trg
         name="${trgspk}_${train_set}"
@@ -179,27 +216,32 @@ if [ "${stage}" -le 2 ] && [ "${stop_stage}" -ge 2 ]; then
 
     # normalize and dump them
     # src
-    spk="${srcspk}"
-    for name in "${spk}_${train_set}" "${spk}_${dev_set}" "${spk}_${eval_set}"; do
-    (
-        [ ! -e "${dumpdir}/${name}/norm_${norm_name}" ] && mkdir -p "${dumpdir}/${name}/norm_${norm_name}"
-        echo "Nomalization start. See the progress via ${dumpdir}/${name}/norm_${norm_name}/normalize_${src_feat}.*.log."
-        ${train_cmd} JOB=1:${n_jobs} "${dumpdir}/${name}/norm_${norm_name}/normalize_${src_feat}.JOB.log" \
-            normalize.py \
-                --config "${config_for_feature_extraction}" \
-                --stats "${src_stats}" \
-                --rootdir "${dumpdir}/${name}/raw/dump.JOB" \
-                --dumpdir "${dumpdir}/${name}/norm_${norm_name}/dump.JOB" \
-                --verbose "${verbose}" \
-                --feat_type "${src_feat}" \
-                --skip-wav-copy
-        echo "Successfully finished normalization of ${name} set."
-    ) &
-    pids+=($!)
+    pids=()
+    for srcspk in "${srcspks[@]}"; do
+        (   
+            src_stats="${dumpdir}/${srcspk}_${train_set}/stats.${stats_ext}"
+            for name in "${srcspk}_${train_set}" "${srcspk}_${dev_set}" "${srcspk}_${eval_set}"; do
+
+                [ ! -e "${dumpdir}/${name}/norm_${norm_name}" ] && mkdir -p "${dumpdir}/${name}/norm_${norm_name}"
+                [ ! -e "${src_stats}" ] && echo "Statistics file ${src_stats} does not exist. Please run stage 1 first." && exit 1
+                
+                echo "Nomalization start. See the progress via ${dumpdir}/${name}/norm_${norm_name}/normalize_${src_feat}.*.log."
+                ${train_cmd} JOB=1:${n_jobs} "${dumpdir}/${name}/norm_${norm_name}/normalize_${src_feat}.JOB.log" \
+                    normalize.py \
+                        --config "${config_for_feature_extraction}" \
+                        --stats "${src_stats}" \
+                        --rootdir "${dumpdir}/${name}/raw/dump.JOB" \
+                        --dumpdir "${dumpdir}/${name}/norm_${norm_name}/dump.JOB" \
+                        --verbose "${verbose}" \
+                        --feat_type "${src_feat}" \
+                        --skip-wav-copy
+                echo "Successfully finished normalization of ${name} set."
+            done
+        ) &
+        pids+=($!)
     done
     i=0; for pid in "${pids[@]}"; do wait "${pid}" || ((++i)); done
     [ "${i}" -gt 0 ] && echo "$0: ${i} background jobs are failed." && exit 1;
-    echo "Successfully finished ${spk} side normalization."
 
     # trg
     spk="${trgspk}"
@@ -226,12 +268,14 @@ if [ "${stage}" -le 2 ] && [ "${stop_stage}" -ge 2 ]; then
 fi
 
 if [ -z ${tag} ]; then
-    expname=${srcspk}_${trgspk}_$(basename ${conf%.*})
+    # Replace commas with underscores for multiple source speakers
+    srcspk_name=${srcspk//,/_}
+    expname=${srcspk_name}_${trgspk}_$(basename ${conf%.*})
 else
     expname=${srcspk}_${trgspk}_${tag}
 fi
 expdir=${exp_root}/${expname}
-if [ "${stage}" -le 3 ] && [ "${stop_stage}" -ge 3 ]; then
+if [ "${stage}" -le 4 ] && [ "${stop_stage}" -ge 4 ]; then
     echo "Stage 3: Network training"
     [ ! -e "${expdir}" ] && mkdir -p "${expdir}"
     if [ "${n_gpus}" -gt 1 ]; then
@@ -243,13 +287,24 @@ if [ "${stage}" -le 3 ] && [ "${stop_stage}" -ge 3 ]; then
         echo "Pretraining not Implemented yet."
         exit 1
     else
+        src_train_dumpdirs=()
+        src_dev_dumpdirs=()
+        for srcspk in "${srcspks[@]}"; do
+            src_train_dumpdirs+=("${dumpdir}/${srcspk}_train/norm_${norm_name}")
+            src_dev_dumpdirs+=("${dumpdir}/${srcspk}_dev/norm_${norm_name}")
+        done
+
+        # construct comma separated list of source training and development dump directories
+        src_train_dumpdirs=$(IFS=,; echo "${src_train_dumpdirs[*]}")
+        src_dev_dumpdirs=$(IFS=,; echo "${src_dev_dumpdirs[*]}") 
+
         cp "${dumpdir}/${trgspk}_train/stats.${stats_ext}" "${expdir}/"
         echo "Training start. See the progress via ${expdir}/train.log."
         ${cuda_cmd} --gpu "${n_gpus}" "${expdir}/train.log" \
             vc_train.py \
                 --config "${conf}" \
-                --src-train-dumpdir "${dumpdir}/${srcspk}_train/norm_${norm_name}" \
-                --src-dev-dumpdir "${dumpdir}/${srcspk}_dev/norm_${norm_name}" \
+                --src-train-dumpdir  "${src_train_dumpdirs}" \
+                --src-dev-dumpdir "${src_dev_dumpdirs}" \
                 --src-feat-type "${src_feat}" \
                 --trg-train-dumpdir "${dumpdir}/${trgspk}_train/norm_${norm_name}" \
                 --trg-dev-dumpdir "${dumpdir}/${trgspk}_dev/norm_${norm_name}" \
@@ -266,7 +321,7 @@ if [ "${stage}" -le 3 ] && [ "${stop_stage}" -ge 3 ]; then
     echo "Successfully finished training."
 fi
 
-if [ "${stage}" -le 4 ] && [ "${stop_stage}" -ge 4 ]; then
+if [ "${stage}" -le 5 ] && [ "${stop_stage}" -ge 5 ]; then
     echo "Stage 4: Network decoding"
     # shellcheck disable=SC2012
     [ -z "${checkpoint}" ] && checkpoint="$(ls -dt "${expdir}"/*.pkl | head -1 || true)"
@@ -296,7 +351,7 @@ if [ "${stage}" -le 4 ] && [ "${stop_stage}" -ge 4 ]; then
     echo "Successfully finished decoding."
 fi
 
-if [ ${stage} -le 5 ] && [ ${stop_stage} -ge 5 ]; then
+if [ ${stage} -le 6 ] && [ ${stop_stage} -ge 6 ]; then
     echo "stage 5: Objective Evaluation"
 
     [ -z "${checkpoint}" ] && checkpoint="$(ls -dt "${expdir}"/*.pkl | head -1 || true)"
@@ -305,7 +360,7 @@ if [ ${stage} -le 5 ] && [ ${stop_stage} -ge 5 ]; then
         name="${srcspk}_${_set}"
         echo "Evaluation start. See the progress via ${outdir}/${name}/evaluation.log."
         ${cuda_cmd} --gpu "${n_gpus}" "${outdir}/${name}/evaluation.log" \
-            local/evaluate.py \
+             local/evaluate.py \
                 --wavdir "${outdir}/${name}" \
                 --data_root "${db_root}/${trgspk}" \
                 --set_name ${_set} \

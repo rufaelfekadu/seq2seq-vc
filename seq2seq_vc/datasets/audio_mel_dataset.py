@@ -777,3 +777,117 @@ class ParallelVCMelDatasetManyToOne(Dataset):
 
         """
         return len(self.mel_files)
+
+class SourceVCMelDatasetManyToOne(Dataset):
+    """PyTorch compatible mel dataset for VC. with many-to-one mapping.
+    Contains source side mel only, mainly designed for evaluation.
+    """
+
+    def __init__(
+        self,
+        src_root_dirs,
+        mel_query="*-feats.npy",
+        mel_load_fn=np.load,
+        dp_input_root_dir=None,
+        dp_input_query="*.h5",
+        dp_input_load_fn=np.load,
+        return_utt_id=False,
+        allow_cache=False,
+    ):
+        """Initialize dataset.
+
+        Args:
+            src_root_dir (str): Root directory including dumped files for the source.
+            mel_query (str): Query to find feature files in root_dir.
+            mel_load_fn (func): Function to load feature file.
+            return_utt_id (bool): Whether to return the utterance id with arrays.
+            allow_cache (bool): Whether to allow cache of the loaded files.
+
+        """
+        # find all of the mel files
+        src_mel_files = {}
+        spk_embs = {}
+        spks = []
+        for src_root_dir in src_root_dirs.split(","):
+            spk_dir = os.path.dirname(src_root_dir)
+            cur_spk = spk_dir.replace("_train", "").replace("_dev", "").replace("_test", "").split("/")[-1]
+            spks.append(cur_spk)
+            src_mel_files[cur_spk] = sorted(find_files(src_root_dir, mel_query))
+            spk_embs[cur_spk] = os.path.join(spk_dir, "spemb.h5")
+            assert os.path.exists(spk_embs[cur_spk]), f"Speaker embedding file {spk_embs[cur_spk]} does not exist. {cur_spk}"
+            
+
+        self.src_mel_files = sorted([file for spk in spks for file in src_mel_files[spk]])
+        self.spk_embs = spk_embs
+        self.mel_load_fn = mel_load_fn
+        self.dp_input_load_fn = dp_input_load_fn
+        self.emb_load_fn = lambda x: read_hdf5(x, "embeddings")
+
+        # make sure the utt ids match
+        src_utt_ids = sorted(
+            [os.path.splitext(os.path.basename(f))[0] for f in self.src_mel_files]
+        )
+        self.spk = ["_".join(utt_id.split("_")[:-1]) for utt_id in src_utt_ids]
+        self.utt_ids = src_utt_ids
+        self.return_utt_id = return_utt_id
+        self.allow_cache = allow_cache
+        if allow_cache:
+            # NOTE(kan-bayashi): Manager is need to share memory in dataloader with num_workers > 0
+            self.manager = Manager()
+            self.caches = self.manager.list()
+            self.caches += [() for _ in range(len(self.src_mel_files))]
+        if dp_input_root_dir is not None:
+            self.use_dp_input = True
+
+            # find all dp input files
+            # dp_input_feat_files = sorted(find_files(dp_input_root_dir, dp_input_query))
+            # assert len(dp_input_feat_files) == len(self.src_mel_files)
+
+            # self.src_mel_files = [
+            #     [v] + [dp_input_feat_files[i]] for i, v in enumerate(self.src_mel_files)
+            # ]
+            self.src_mel_files = [[v] for v in self.src_mel_files]
+        else:
+            self.src_mel_files = [[v] for v in self.src_mel_files]
+            self.use_dp_input = False
+    def __getitem__(self, idx):
+        """Get specified idx items.
+
+        Args:
+            idx (int): Index of the item.
+
+        Returns:
+            str: Utterance id (only in return_utt_id = True).
+            ndarray: Feature (T', C).
+
+        """
+        if self.allow_cache and len(self.caches[idx]) != 0:
+            return self.caches[idx]
+
+        utt_id = self.utt_ids[idx]
+        src_mel = self.mel_load_fn(self.src_mel_files[idx][0])
+        spk_emb = self.emb_load_fn(self.spk_embs[self.spk[idx]])
+        # convert to tensor
+        if isinstance(spk_emb, np.ndarray):
+            spk_emb = torch.tensor(spk_emb, dtype=torch.float32)
+
+        items = {"src_feat": src_mel, "spk_emb": spk_emb}
+
+        if self.return_utt_id:
+            items["utt_id"] = utt_id
+
+        if self.use_dp_input:
+            items["dp_input"] = self.dp_input_load_fn(self.src_mel_files[idx][1])
+
+        if self.allow_cache:
+            self.caches[idx] = items
+
+        return items
+    def __len__(self):
+        """Return dataset length.
+
+        Returns:
+            int: The length of dataset.
+
+        """
+        return len(self.src_mel_files)

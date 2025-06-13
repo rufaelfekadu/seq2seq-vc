@@ -19,7 +19,7 @@ import yaml
 from tqdm import tqdm
 
 import seq2seq_vc.models
-from seq2seq_vc.datasets import ParallelVCMelDataset, SourceVCMelDataset
+from seq2seq_vc.datasets import ParallelVCMelDataset, SourceVCMelDataset, SourceVCMelDatasetManyToOne
 from seq2seq_vc.utils import read_hdf5, write_hdf5
 from seq2seq_vc.utils.plot import plot_attention, plot_generated_and_ref_2d, plot_1d
 from seq2seq_vc.vocoder import Vocoder
@@ -190,7 +190,7 @@ def main():
                 return_utt_id=True,
             )
         else:
-            dataset = SourceVCMelDataset(
+            dataset = SourceVCMelDatasetManyToOne(
                 src_root_dir=args.dumpdir,
                 mel_query=mel_query,
                 mel_load_fn=mel_load_fn,

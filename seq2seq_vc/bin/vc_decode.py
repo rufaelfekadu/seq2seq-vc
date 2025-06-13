@@ -293,9 +293,10 @@ def main():
                 else:
                     utt_id = batch["utt_id"]
                     x = batch["src_feat"]
+                    spemb = batch.get("spemb", None).to(device) if "spemb" in batch else None
                     x = torch.tensor(x, dtype=torch.float).to(device)
                     outs, probs, att_ws = model.inference(
-                        x, config["inference"], spemb=None
+                        x, config["inference"], spemb=spemb
                     )
             else:
                 utt_id = batch["utt_id"]

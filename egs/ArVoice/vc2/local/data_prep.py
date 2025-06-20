@@ -52,6 +52,7 @@ def main():
     train_utts = []
     dev_utts = []
     eval_utts = []
+    ood_utts = []
 
     print(f"Preparing data for speakers: {args.srcspks} with target speaker: {args.tgtspk} and OOD speakers: {args.oodspks}")
     for srcspk in args.srcspks:
@@ -108,6 +109,7 @@ def main():
         for oodspk in oodspks:
             ood_spk_dir = os.path.join(args.data_dir, f"ArVoice_syn-{oodspk}", f"{oodspk}")
             ood_audio_files = find_audio(ood_spk_dir)
+            ood_utts+= list(ood_audio_files.keys())
             if not ood_audio_files:
                 print(f"No audio files found for OOD speaker {oodspk} in {ood_spk_dir}.")
                 continue
@@ -123,7 +125,7 @@ def main():
     # select utterances for each set
     train_utts = {uttid: lines[uttid] for uttid in train_utts if uttid in lines}
     dev_utts = {uttid: lines[uttid] for uttid in dev_utts if uttid in lines}
-    eval_utts = {uttid: lines[uttid] for uttid in eval_utts if uttid in lines}
+    eval_utts = {uttid: lines[uttid] for uttid in eval_utts+ood_utts if uttid in lines}
 
     # Write text files for each set
     write_text_file(train_utts, os.path.join(args.data_dir, f"{args.train_set}.txt"))

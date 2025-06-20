@@ -13,6 +13,7 @@ train_set="train_nodev"
 dev_set="dev"
 eval_set="eval"
 shuffle=false
+tgtspk="ar-XA-Wavenet-A" 
 
 # shellcheck disable=SC1091
 . utils/parse_options.sh || exit 1;
@@ -52,10 +53,21 @@ done
 [ ! -e "${data_dir}/test_${spk}" ] && mkdir -p "${data_dir}/test_${spk}"
 [ ! -e "${data_dir}/non_test_${spk}" ] && mkdir -p "${data_dir}/non_test_${spk}"
 
+# do the same for the tgt speaker
+[ ! -e "${data_dir}/all_${tgtspk}" ] && mkdir -p "${data_dir}/all_${tgtspk}"
+[ ! -e "${data_dir}/test_${tgtspk}" ] && mkdir -p "${data_dir}/test_${tgtspk}"
+[ ! -e "${data_dir}/non_test_${tgtspk}" ]&& mkdir -p "${data_dir}/non_test_${tgtspk}"
+
+
 # set filenames
 scp="${data_dir}/all_${spk}/wav.scp"
 test_scp="${data_dir}/test_${spk}/wav.scp"
 non_test_scp="${data_dir}/non_test_${spk}/wav.scp"
+
+tgt_scp="${data_dir}/all_${tgtspk}/wav.scp"
+tgt_test_scp="${data_dir}/test_${tgtspk}/wav.scp"
+tgt_non_test_scp="${data_dir}/non_test_${tgtspk}/wav.scp"
+
 
 # check file existence
 [ -e "${scp}" ] && rm "${scp}"
@@ -63,28 +75,47 @@ non_test_scp="${data_dir}/non_test_${spk}/wav.scp"
 [ -e "${non_test_scp}" ] && rm "${non_test_scp}"
 
 # make all scp
-for subgroup in "${db_root}"/*/; do
-    if [ -d "${subgroup}${spk}" ]; then
-        find "${subgroup}${spk}" -follow -name "*.wav" | sort | while read -r filename; do
-            # Extract subgroup name for unique ID
-            subgroup_name=$(basename "$(dirname "${filename}")")
-            parent_dir=$(basename "$(dirname "$(dirname "${filename}")")")
-            id=$(basename "${filename}" | sed -e "s/\.[^\.]*$//g")
-            echo "${id} cat ${filename} | sox -t wav - -c 1 -b 16 -t wav - rate ${fs} |" >> "${scp}"
-            
-            # Separate test files and non-test files
-            if [[ "${filename}" == *"test"* ]]; then
-                echo "${id} cat ${filename} | sox -t wav - -c 1 -b 16 -t wav - rate ${fs} |" >> "${test_scp}"
-            else
-                echo "${id} cat ${filename} | sox -t wav - -c 1 -b 16 -t wav - rate ${fs} |" >> "${non_test_scp}"
-            fi
-        done
+# for subgroup in "${db_root}"/ArVoice_syn-${spk}/; do
+#     if [ -d "${subgroup}${spk}" ]; then
+
+find "${db_root}"/Arvoice_syn-"${spk}"/"${spk}" -follow -name "*.wav" | sort | while read -r filename; do
+    id=$(basename "${filename}" | sed -e "s/\.[^\.]*$//g")
+    echo "${id} cat ${filename} | sox -t wav - -c 1 -b 16 -t wav - rate ${fs} |" >> "${scp}"
+    
+    # Separate test files and non-test files
+    if [[ "${filename}" == *"test"* ]]; then
+        echo "${id} cat ${filename} | sox -t wav - -c 1 -b 16 -t wav - rate ${fs} |" >> "${test_scp}"
+    else
+        echo "${id} cat ${filename} | sox -t wav - -c 1 -b 16 -t wav - rate ${fs} |" >> "${non_test_scp}"
     fi
 done
+
+find "${db_root}"/Arvoice_syn-"${spk}"/"${tgt_spk}" -follow -name "*.wav" | sort | while read -r filename; do
+    id=$(basename "${filename}" | sed -e "s/\.[^\.]*$//g")
+    echo "${id} cat ${filename} | sox -t wav - -c 1 -b 16 -t wav - rate ${fs} |" >> "${scp}"
+    
+    # Separate test files and non-test files
+    if [[ "${filename}" == *"test"* ]]; then
+        echo "${id} cat ${filename} | sox -t wav - -c 1 -b 16 -t wav - rate ${fs} |" >> "${test_scp}"
+    else
+        echo "${id} cat ${filename} | sox -t wav - -c 1 -b 16 -t wav - rate ${fs} |" >> "${non_test_scp}"
+    fi
+done
+#     fi
+# done
 
 # Get the number of test files
 num_test=$(wc -l < "${test_scp}")
 echo "Found ${num_test} test files."
+
+# if no non-test files exist just prepare test set
+if [ ! -s "${non_test_scp}" ]; then
+    echo "No non-test files found. Using all files as test set."
+    rm -rf "${data_dir}/all_${spk}"
+    rm -rf "${data_dir}/non_test_${spk}"
+    exit 0
+fi
+
 
 num_non_test=$(wc -l < "${non_test_scp}")
 num_train=$((num_non_test - num_dev))

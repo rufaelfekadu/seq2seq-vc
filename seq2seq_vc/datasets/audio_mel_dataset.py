@@ -644,25 +644,26 @@ class ParallelVCMelDatasetManyToOne(Dataset):
             cur_spk = spk_dir.replace("_train", "").replace("_dev", "").replace("_test", "").split("/")[-1]
             spks.append(cur_spk)
             src_mel_files[cur_spk] = sorted(find_files(src_root_dir, mel_query))
-            spk_embs[cur_spk] = os.path.join(spk_dir, "spemb.h5")
-            assert os.path.exists(spk_embs[cur_spk]), f"Speaker embedding file {spk_embs[cur_spk]} does not exist. {cur_spk}"
+            spk_embs[cur_spk] = sorted(find_files(os.path.join(spk_dir, "spemb"), mel_query))
             
-
         trg_mel_files = sorted(find_files(trg_root_dir, mel_query))
-
+        
         # assert the number of files
         assert len(src_mel_files) != 0, f"Not found any mel files in ${src_root_dirs}."
         assert len(trg_mel_files) != 0, f"Not found any mel files in ${trg_root_dir}."
+        assert len(src_mel_files.values()) == len(spk_embs.values()), (
+            f"Number of source mel files and speaker embedding files are different "
+            f"({len(src_mel_files)} vs {len(spk_embs)})."
+        )
 
         # convert src_mel_files to a list 
         self.src_mel_files = sorted([file for spk in spks for file in src_mel_files[spk]])
-        self.spk_embs = spk_embs
+        self.spk_embs = sorted([spk_emb for spk in spks for spk_emb in spk_embs[spk]])
         self.trg_mel_files = trg_mel_files
         self.src_load_fn = src_load_fn
         self.trg_load_fn = trg_load_fn
         self.dp_input_load_fn = dp_input_load_fn
-        self.emb_load_fn = lambda x: read_hdf5(x, "embeddings")
-
+        self.emb_load_fn = lambda x: read_hdf5(x, "embedding")
         # make sure the utt ids match
         src_utt_ids = sorted(
             [os.path.splitext(os.path.basename(f))[0] for f in self.src_mel_files]
@@ -671,13 +672,11 @@ class ParallelVCMelDatasetManyToOne(Dataset):
         trg_utt_ids = sorted(
             [os.path.splitext(os.path.basename(f))[0] for f in trg_mel_files]
         )
-        assert set(src_utt_ids) == set(
-            trg_utt_ids
-        ), f"{len(set(src_utt_ids))} {len(set(trg_utt_ids))}{set(src_utt_ids).difference(set(trg_utt_ids))}"
+        assert set(src_utt_ids) == set(trg_utt_ids), f"{len(set(src_utt_ids))} {len(set(trg_utt_ids))}{set(src_utt_ids).difference(set(trg_utt_ids))}"
+        
         self.utt_ids = src_utt_ids
-
         # use map(list, zip(...)) to get list of list
-        self.mel_files = list(map(list, zip(self.src_mel_files, self.trg_mel_files)))
+        self.mel_files = list(map(list, zip(self.src_mel_files, self.trg_mel_files, self.spk_embs)))
         
         self.return_utt_id = return_utt_id
         self.allow_cache = allow_cache
@@ -702,6 +701,16 @@ class ParallelVCMelDatasetManyToOne(Dataset):
             self.use_dp_input = True
         else:
             self.use_dp_input = False
+        
+        if self.spk_embs is not None:
+            # append speaker embedding files to mel_files
+            assert len(self.spk_embs) == len(self.mel_files), (
+                f"Number of speaker embedding files and mel files are different "
+                f"({len(self.spk_embs)} vs {len(self.mel_files)})."
+            )
+            self.mel_files = [
+                v + [self.spk_embs[i]] for i, v in enumerate(self.mel_files)
+            ]
 
         # load duration files, and zip with mel_files
         if durations_dir is not None:
@@ -735,12 +744,13 @@ class ParallelVCMelDatasetManyToOne(Dataset):
         utt_id = self.utt_ids[idx]
         src_mel = self.src_load_fn(self.mel_files[idx][0])
         trg_mel = self.trg_load_fn(self.mel_files[idx][1])
-        spk_emb = self.emb_load_fn(self.spk_embs[self.spk[idx]])
-        # convert to tensor
-        if isinstance(spk_emb, np.ndarray):
-            spk_emb = torch.tensor(spk_emb, dtype=torch.float32)
+        spk_emb = self.emb_load_fn(self.mel_files[idx][2])
 
-        items = {"src_feat": src_mel, "trg_feat": trg_mel, "spk_emb": spk_emb}
+        # convert to tensor
+        # if isinstance(spk_emb, np.ndarray):
+        #     spk_emb = torch.tensor(spk_emb, dtype=torch.float32)
+
+        items = {"src_feat": src_mel, "trg_feat": trg_mel, "spemb": spk_emb}
 
         if self.use_dp_input:
             # read dp input feat
@@ -871,7 +881,7 @@ class SourceVCMelDatasetManyToOne(Dataset):
         if isinstance(spk_emb, np.ndarray):
             spk_emb = torch.tensor(spk_emb, dtype=torch.float32)
 
-        items = {"src_feat": src_mel, "spk_emb": spk_emb}
+        items = {"src_feat": src_mel, "spembs": spk_emb}
 
         if self.return_utt_id:
             items["utt_id"] = utt_id

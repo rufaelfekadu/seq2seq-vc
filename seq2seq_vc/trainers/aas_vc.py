@@ -62,7 +62,7 @@ class AASVCTrainer(Trainer):
         olens = batch["olens"].to(self.device)
         dp_inputs = batch["dp_inputs"].to(self.device)
         dplens = batch["dplens"].to(self.device)
-        spk_emb = batch["spk_emb"].to(self.device) if "spk_emb" in batch else None
+        spk_emb = batch["spembs"].to(self.device) if "spembs" in batch else None
 
         # model forward
         ret = self.model(xs, ilens, ys, olens, dp_inputs, dp_lengths=dplens, spembs=spk_emb)

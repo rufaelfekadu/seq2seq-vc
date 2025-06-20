@@ -50,11 +50,12 @@ class NARVCCollater(object):
         xs = []
         ys = []
         dp_inputs = []
-
+        spembs = []
         for b in batch:
             xs.append(b["src_feat"])
             ys.append(b["trg_feat"])
             dp_inputs.append(b["dp_input"])
+            spembs.append(b["spemb"]) if "spemb" in b else None
 
         # get list of lengths (must be tensor for DataParallel)
         ilens = torch.from_numpy(np.array([x.shape[0] for x in xs])).long()
@@ -67,6 +68,9 @@ class NARVCCollater(object):
         dp_inputs = pad_list(
             [torch.from_numpy(dp_input).float() for dp_input in dp_inputs], 0
         )
+        spembs = torch.stack(
+            [torch.from_numpy(spemb).float() for spemb in spembs], dim=0
+        ) if spembs else None
 
         items = {
             "xs": xs,
@@ -75,7 +79,7 @@ class NARVCCollater(object):
             "olens": olens,
             "dp_inputs": dp_inputs,
             "dplens": dplens,
-            "spembs": None,
+            "spembs": spembs,
         }
 
         # get duration if exists

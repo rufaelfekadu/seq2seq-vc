@@ -61,7 +61,6 @@ class Trainer(object):
         self.finish_train = False
         self.total_train_loss = defaultdict(float)
         self.total_eval_loss = defaultdict(float)
-
         self.gradient_accumulate_steps = self.config.get("gradient_accumulate_steps", 1)
 
     def run(self):

@@ -103,6 +103,8 @@ def main():
     write_wav_scp(tgt_dev_audio_files, os.path.join(args.output_dir, f"{args.tgtspk}_dev", "wav.scp"), args.fs)
     write_wav_scp(tgt_eval_audio_files, os.path.join(args.output_dir, f"{args.tgtspk}_test", "wav.scp"), args.fs)
 
+    
+
     # prepare oodspks if any
     if args.oodspks:
         oodspks = args.oodspks.split()
@@ -120,13 +122,17 @@ def main():
     with open(os.path.join(args.data_dir, "metadata.csv"), 'r') as f:
         lines = f.readlines()
     lines = [line.strip() for line in lines if line.strip()]
-    lines = {k:v for k, v in (line.split('|') for line in lines)}
+    lines = {os.path.basename(k).split('.')[0]:v for k, v in (line.split('|') for line in lines)}
     
     # select utterances for each set
     train_utts = {uttid: lines[uttid] for uttid in train_utts if uttid in lines}
     dev_utts = {uttid: lines[uttid] for uttid in dev_utts if uttid in lines}
     eval_utts = {uttid: lines[uttid] for uttid in eval_utts+ood_utts if uttid in lines}
 
+    print(f"Number of training utterances: {len(train_utts)}")
+    print(f"Number of development utterances: {len(dev_utts)}")
+    print(f"Number of evaluation utterances: {len(eval_utts)}")
+    
     # Write text files for each set
     write_text_file(train_utts, os.path.join(args.data_dir, f"{args.train_set}.txt"))
     write_text_file(dev_utts, os.path.join(args.data_dir, f"{args.dev_set}.txt"))

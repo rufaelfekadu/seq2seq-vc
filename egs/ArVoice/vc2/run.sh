@@ -273,15 +273,16 @@ if [ "${stage}" -le 3 ] && [ "${stop_stage}" -ge 3 ]; then
     echo "Successfully finished normalization."
 fi
 
-if [ -z ${tag} ]; then
-    # Replace commas with underscores for multiple source speakers
-    srcspk_name=$(echo "${srcspk}" | tr ' ' '_')
-    expname=${srcspk_name}"_"${trgspk}
-else
-    spk_name=$(echo "${srcspk}" | tr ' ' '_')
-    expname=${spk_name}"_"${trgspk}-${tag}
-fi
-expdir=${exp_root}/${expname}
+# if [ -z ${tag} ]; then
+#     # Replace commas with underscores for multiple source speakers
+#     srcspk_name=$(echo "${srcspk}" | tr ' ' '_')
+#     expname=${srcspk_name}"_"${trgspk}
+# else
+#     spk_name=$(echo "${srcspk}" | tr ' ' '_')
+#     expname=${spk_name}"_"${trgspk}-${tag}
+# fi
+
+expdir=${exp_root}
 
 if [ "${stage}" -le 4 ] && [ "${stop_stage}" -ge 4 ]; then
     echo "Stage 4: Network training"

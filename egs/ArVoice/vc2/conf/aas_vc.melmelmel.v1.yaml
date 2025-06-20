@@ -85,9 +85,9 @@ lambda_align: 2.0
 #                   INFERENCE SETTING                     #
 ###########################################################
 vocoder:
-    checkpoint: ./downloads/arvoice-syn-wavenet-vocoder/checkpoint-400000steps.pkl
-    config: ./downloads/arvoice-syn-wavenet-vocoder/config.yml
-    stats: ./downloads/arvoice-syn-wavenet-vocoder/stats.h5
+    checkpoint: ./downloads/Wavenet-A-Wavenet-B/checkpoint-400000steps.pkl
+    config: ./downloads/Wavenet-A-Wavenet-B/config.yml
+    stats: ./downloads/Wavenet-A-Wavenet-B/stats.h5
 
 ###########################################################
 #                  DATA LOADER SETTING                    #

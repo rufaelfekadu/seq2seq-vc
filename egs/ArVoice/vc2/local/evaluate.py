@@ -99,31 +99,6 @@ def get_basename(path):
 
 def get_speaker(path):
     return os.path.dirname(path).split("/")[-1] 
-# def gen_embedings(gt_root, converted_files):
-#     classifier = EncoderClassifier.from_hparams(source="speechbrain/spkrec-ecapa-voxceleb")
-#     embeddings = {
-#         'real': [],
-#         'generated': []
-#     }
-#     # load the audio using torch
-
-#     for i, cv_path in enumerate(converted_files):
-#         basename = get_basename(cv_path)
-#         gt_wav_path = os.path.join(gt_root, basename + ".wav")
-
-#         # load waveform using torchaudio
-#         gt_audio = torchaudio.load(gt_wav_path)[0]
-#         cv_audio = torchaudio.load(cv_path)[0]
-#         # get the speaker embedding
-#         embeddings['real'].append(
-#             classifier.encode_batch(gt_audio).squeeze(0)
-#         )
-
-#         embeddings['generated'].append(
-#             classifier.encode_batch(cv_audio).squeeze(0)
-#         )
-
-#     return embeddings
 
 def compute_eer(trg_spk, source_root, gt_root, converted_files):
     
@@ -291,7 +266,7 @@ def main():
 
     trgspk = args.trgspk
     gt_root = args.data_root
-    transcription_path = os.path.join(args.data_root, "text", f"{args.set_name}.txt")
+    transcription_path = os.path.join(args.data_root, f"{args.set_name}.txt")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
     # load f0min and f0 max
@@ -327,19 +302,16 @@ def main():
     print("Calculating ASR-based score...")
 
     # load ASR model
-    # asr_model = load_asr_model(device)
+    asr_model = load_asr_model(device)
 
-    # # calculate error rates
-    # ers, cer, wer = _calculate_asr_score(
-    #     asr_model, device, converted_files, groundtruths
-    # )
+    # calculate error rates
+    ers, cer, wer = _calculate_asr_score(
+        asr_model, device, converted_files, groundtruths
+    )
     
     ##############################
 
     print("Calculating EER...")
-    # generate embedings
-    # embeddings = gen_embedings(gt_root, converted_files)
-    # calculate EER
     import json
     eer_gen, eer_gt = compute_eer(trgspk, args.src_root, gt_root, converted_files)
     with open(f"downloads/eer_{trgspk}.txt", "w") as f:
@@ -350,66 +322,68 @@ def main():
         }, f, indent=4)
 
     print({"eer_gen": eer_gen, "eer_gt": eer_gt})
+
     ##############################
 
-    # print("Calculating MCD and f0-related scores...")
-    # # Get and divide list
-    # file_lists = np.array_split(converted_files, args.n_jobs)
-    # file_lists = [f_list.tolist() for f_list in file_lists]
+    print("Calculating MCD and f0-related scores...")
+    # Get and divide list
+    file_lists = np.array_split(converted_files, args.n_jobs)
+    file_lists = [f_list.tolist() for f_list in file_lists]
 
-    # # multi processing
-    # with mp.Manager() as manager:
-    #     results = manager.list()
-    #     processes = []
-    #     for f in file_lists:
-    #         p = mp.Process(
-    #             target=_calculate_mcd_f0,
-    #             args=(f, gt_root, segments, trgspk, f0min, f0max, results, False),
-    #         )
-    #         p.start()
-    #         processes.append(p)
+    # multi processing
+    with mp.Manager() as manager:
+        results = manager.list()
+        processes = []
+        for f in file_lists:
+            p = mp.Process(
+                target=_calculate_mcd_f0,
+                args=(f, gt_root, segments, trgspk, f0min, f0max, results, False),
+            )
+            p.start()
+            processes.append(p)
 
-    #     # wait for all process
-    #     for p in processes:
-    #         p.join()
+        # wait for all process
+        for p in processes:
+            p.join()
 
-    #     sorted_results = sorted(results, key=lambda x:x[0])
-    #     results = []
-    #     for result in sorted_results:
-    #         d = {k: v for k, v in result[1].items()}
-    #         d["basename"] = result[0]
-    #         d["CER"] = ers[result[0]][0]
-    #         d["GT_TRANSCRIPTION"] = ers[result[0]][2]
-    #         d["CV_TRANSCRIPTION"] = ers[result[0]][3]
-    #         results.append(d)
+        sorted_results = sorted(results, key=lambda x:x[0])
+        results = []
+        for result in sorted_results:
+            d = {k: v for k, v in result[1].items()}
+            d["basename"] = result[0]
+            d["CER"] = ers[result[0]][0]
+            d["GT_TRANSCRIPTION"] = ers[result[0]][2]
+            d["CV_TRANSCRIPTION"] = ers[result[0]][3]
+            results.append(d)
         
-    # # utterance wise result
-    # for result in results:
-    #     print(
-    #         "{} {:.2f} {:.2f} {:.2f} {:.2f} {:.1f} \t{} | {}".format(
-    #             result["basename"],
-    #             result["MCD"],
-    #             result["F0RMSE"],
-    #             result["F0CORR"],
-    #             result["DDUR"],
-    #             result["CER"],
-    #             result["GT_TRANSCRIPTION"],
-    #             result["CV_TRANSCRIPTION"],
-    #         )
-    #     )
+    # utterance wise result
+    for result in results:
+        print(
+            "{} {:.2f} {:.2f} {:.2f} {:.2f} {:.1f} \t{} | {}".format(
+                result["basename"],
+                result["MCD"],
+                result["F0RMSE"],
+                result["F0CORR"],
+                result["DDUR"],
+                result["CER"],
+                result["GT_TRANSCRIPTION"],
+                result["CV_TRANSCRIPTION"],
+            )
+        )
 
-    # # average result
-    # mMCD = np.mean(np.array([result["MCD"] for result in results]))
-    # mf0RMSE = np.mean(np.array([result["F0RMSE"] for result in results]))
-    # mf0CORR = np.mean(np.array([result["F0CORR"] for result in results]))
-    # mDDUR = np.mean(np.array([result["DDUR"] for result in results]))
-    # mCER = cer 
+    # average result
+    mMCD = np.mean(np.array([result["MCD"] for result in results]))
+    mf0RMSE = np.mean(np.array([result["F0RMSE"] for result in results]))
+    mf0CORR = np.mean(np.array([result["F0CORR"] for result in results]))
+    mDDUR = np.mean(np.array([result["DDUR"] for result in results]))
+    mCER = cer
+    mEER = eer_gen["EER"] 
 
-    # print(
-    #     "Mean MCD, f0RMSE, f0CORR, DDUR, CER: {:.2f} {:.2f} {:.3f} {:.3f} {:.1f}".format(
-    #         mMCD, mf0RMSE, mf0CORR, mDDUR, mCER
-    #     )
-    # )
+    print(
+        "Mean MCD, f0RMSE, f0CORR, DDUR, CER: {:.2f} {:.2f} {:.3f} {:.3f} {:.1f}".format(
+            mMCD, mf0RMSE, mf0CORR, mDDUR, mCER
+        )
+    )
 
     
     

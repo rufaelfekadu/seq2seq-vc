@@ -1,7 +1,6 @@
 import os
 import random
 
-
 def find_audio(path):
     """Recursively find all .wav files in the given path."""
     audio_files = {}
@@ -20,6 +19,13 @@ def write_wav_scp(audio_files, output_path, fs=16000):
             utt_id = os.path.splitext(os.path.basename(audio_file))[0]
             # Write the line in the format:${id} cat ${filename} | sox -t wav - -c 1 -b 16 -t wav - rate ${fs} |
             f.write(f"{utt_id} sox {audio_file} -c 1 -b 16 -t wav - rate {fs} |\n")
+
+def write_text_file(utterances, output_path):
+    """Write a text file with utterances."""
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    with open(output_path, 'w') as f:
+        for uttid, text in utterances.items():
+            f.write(f"{uttid}|{text}\n")
 
 def main():
     import argparse
@@ -43,6 +49,9 @@ def main():
     tgt_dev_audio_files = []
     tgt_eval_audio_files = []
 
+    train_utts = []
+    dev_utts = []
+    eval_utts = []
 
     print(f"Preparing data for speakers: {args.srcspks} with target speaker: {args.tgtspk} and OOD speakers: {args.oodspks}")
     for srcspk in args.srcspks:
@@ -68,6 +77,10 @@ def main():
 
         dev_uttids = train_uttids[:args.num_dev]
         train_uttids = train_uttids[args.num_dev:]
+
+        train_utts += train_uttids
+        dev_utts += dev_uttids
+        eval_utts += eval_uttids
 
         # select audio files for each set
         train_audio_files = [audio_files[uttid] for uttid in train_uttids]
@@ -100,6 +113,23 @@ def main():
                 continue
             
             write_wav_scp(list(ood_audio_files.values()), os.path.join(args.output_dir, f"{oodspk}_test", "wav.scp"), args.fs)
+    
+    # prepare text files
+    with open(os.path.join(args.data_dir, "metadata.csv"), 'r') as f:
+        lines = f.readlines()
+    lines = [line.strip() for line in lines if line.strip()]
+    lines = {k:v for k, v in (line.split('|') for line in lines)}
+    
+    # select utterances for each set
+    train_utts = {uttid: lines[uttid] for uttid in train_utts if uttid in lines}
+    dev_utts = {uttid: lines[uttid] for uttid in dev_utts if uttid in lines}
+    eval_utts = {uttid: lines[uttid] for uttid in eval_utts if uttid in lines}
+
+    # Write text files for each set
+    write_text_file(train_utts, os.path.join(args.data_dir, f"{args.train_set}.txt"))
+    write_text_file(dev_utts, os.path.join(args.data_dir, f"{args.dev_set}.txt"))
+    write_text_file(eval_utts, os.path.join(args.data_dir, f"{args.eval_set}.txt"))
+
 
 if __name__ == "__main__":
     main()

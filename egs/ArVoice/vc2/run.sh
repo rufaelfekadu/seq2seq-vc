@@ -19,9 +19,8 @@ conf=conf/aas_vc.melmelmel.v1.yaml
 db_root=/workspace/ArVoice-syn
 dumpdir=dump                # directory to dump full features
 exp_root=exp                # directory to save model and results
-srcspk="female_ab female_ad male_aa male_ac"              # available speakers, comma-separated list
-                                       # examples: "ar-XA-Wavenet-C,ar-XA-Wavenet-B" or "ar-XA-Wavenet-C"
-trgspk=ar-XA-Wavenet-A                  # available speakers: "slt" "rms"
+srcspk="female_ab female_ad male_aa male_ac" # available speakers "female_ab female_ad male_aa male"
+trgspk=ar-XA-Wavenet-A                  # available speakers: "ar-XA-Wavenet-A" "ar-XA-Wavenet-B"
 oodspk="male_ae female_af"
 
 stats_ext=h5
@@ -95,22 +94,22 @@ else
     trg_stats="${pretrained_model_dir}/stats.${stats_ext}"
 fi
 
-# if [ ${stage} -le -1 ] && [ ${stop_stage} -ge -1 ]; then
-#     echo "stage -1: Data & Pretrained Model Download"
+if [ ${stage} -le -1 ] && [ ${stop_stage} -ge -1 ]; then
+    echo "stage -1: Data & Pretrained Model Download"
 
-#     # download dataset
-#     # local/data_download.sh "downloads"
+    # download dataset
+    # local/data_download.sh "downloads"
 
-#     # download pretrained vocoder
-#     utils/hf_download.py --repo_id "unilight/hificaptain-vc" --outdir "downloads" --filename "pwg_jp_female/checkpoint-400000steps.pkl"
-#     utils/hf_download.py --repo_id "unilight/hificaptain-vc" --outdir "downloads" --filename "pwg_jp_female/config.yml"
-#     utils/hf_download.py --repo_id "unilight/hificaptain-vc" --outdir "downloads" --filename "pwg_jp_female/stats.h5"
+    # download pretrained vocoder
+    utils/hf_download.py --repo_id "rufaelfekadu/Parallel-WaveGAN-ArVoice" --outdir "downloads" --filename "Wavenet-A-Wavenet-B/checkpoint-400000steps.pkl"
+    utils/hf_download.py --repo_id "rufaelfekadu/Parallel-WaveGAN-ArVoice" --outdir "downloads" --filename "Wavenet-A-Wavenet-B/config.yml"
+    utils/hf_download.py --repo_id "rufaelfekadu/Parallel-WaveGAN-ArVoice" --outdir "downloads" --filename "Wavenet-A-Wavenet-B/stats.h5"
 
-#     # download pretrained aas model
-#     utils/hf_download.py --repo_id "unilight/hificaptain-vc" --outdir "exp" --filename "male_female_aas_vc_mel_pretrained/checkpoint-50000steps.pkl"
-#     utils/hf_download.py --repo_id "unilight/hificaptain-vc" --outdir "exp" --filename "male_female_aas_vc_mel_pretrained/config.yml"
-#     utils/hf_download.py --repo_id "unilight/hificaptain-vc" --outdir "exp" --filename "male_female_aas_vc_mel_pretrained/stats.h5"
-# fi
+    # # download pretrained aas model
+    # utils/hf_download.py --repo_id "unilight/hificaptain-vc" --outdir "exp" --filename "male_female_aas_vc_mel_pretrained/checkpoint-50000steps.pkl"
+    # utils/hf_download.py --repo_id "unilight/hificaptain-vc" --outdir "exp" --filename "male_female_aas_vc_mel_pretrained/config.yml"
+    # utils/hf_download.py --repo_id "unilight/hificaptain-vc" --outdir "exp" --filename "male_female_aas_vc_mel_pretrained/stats.h5"
+fi
 
 if [ ${stage} -le 0 ] && [ ${stop_stage} -ge 0 ]; then
     echo "stage 0: Data preparation"
@@ -283,6 +282,7 @@ else
     expname=${spk_name}"_"${trgspk}-${tag}
 fi
 expdir=${exp_root}/${expname}
+
 if [ "${stage}" -le 4 ] && [ "${stop_stage}" -ge 4 ]; then
     echo "Stage 4: Network training"
     [ ! -e "${expdir}" ] && mkdir -p "${expdir}"
@@ -364,14 +364,13 @@ if [ ${stage} -le 6 ] && [ ${stop_stage} -ge 6 ]; then
 
     [ -z "${checkpoint}" ] && checkpoint="$(ls -dt "${expdir}"/*.pkl | head -1 || true)"
     outdir="${expdir}/results/$(basename "${checkpoint}" .pkl)"
-    for _set in "test"; do
-        name="${srcspk}_${_set}"
+    for name in "${eval_datasets[@]}"; do
         echo "Evaluation start. See the progress via ${outdir}/${name}/evaluation.log."
         ${cuda_cmd} --gpu "${n_gpus}" "${outdir}/${name}/evaluation.log" \
              local/evaluate.py \
                 --wavdir "${outdir}/${name}" \
-                --data_root "${db_root}/${trgspk}" \
-                --set_name ${_set} \
+                --data_root "${db_root}" \
+                --set_name "${eval_set}" \
                 --trgspk ${trgspk} \
                 --f0_path "conf/f0.yaml"
         grep "Mean MCD" "${outdir}/${name}/evaluation.log"

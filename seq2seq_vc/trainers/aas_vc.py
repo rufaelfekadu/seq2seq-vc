@@ -230,7 +230,7 @@ class AASVCTrainer(Trainer):
         olens = batch["olens"].to(self.device)
         dp_inputs = batch["dp_inputs"].to(self.device)
         dplens = batch["dplens"].to(self.device)
-        spembs = [None] * len(xs)
+        spembs = batch["spembs"].to(self.device) if "spembs" in batch else None
 
         for idx, (x, y, olen, ilen, spemb, dp_input, dplen) in enumerate(
             zip(xs, ys, olens, ilens, spembs, dp_inputs, dplens)

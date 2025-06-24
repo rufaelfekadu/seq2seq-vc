@@ -644,7 +644,7 @@ class ParallelVCMelDatasetManyToOne(Dataset):
             cur_spk = spk_dir.replace("_train", "").replace("_dev", "").replace("_test", "").split("/")[-1]
             spks.append(cur_spk)
             src_mel_files[cur_spk] = sorted(find_files(src_root_dir, mel_query))
-            spk_embs[cur_spk] = sorted(find_files(os.path.join(spk_dir, "spemb"), mel_query))
+            spk_embs[cur_spk] = [os.path.join(spk_dir, "spemb/embedding.h5")]*len(src_mel_files[cur_spk])
             
         trg_mel_files = sorted(find_files(trg_root_dir, mel_query))
         
@@ -702,15 +702,16 @@ class ParallelVCMelDatasetManyToOne(Dataset):
         else:
             self.use_dp_input = False
         
-        if self.spk_embs is not None:
-            # append speaker embedding files to mel_files
-            assert len(self.spk_embs) == len(self.mel_files), (
-                f"Number of speaker embedding files and mel files are different "
-                f"({len(self.spk_embs)} vs {len(self.mel_files)})."
-            )
-            self.mel_files = [
-                v + [self.spk_embs[i]] for i, v in enumerate(self.mel_files)
-            ]
+        # if self.spk_embs is not None:
+        #     # append speaker embedding files to mel_files
+        #     assert len(self.spk_embs) == len(self.mel_files), (
+        #         f"Number of speaker embedding files and mel files are different "
+        #         f"({len(self.spk_embs)} vs {len(self.mel_files)})."
+        #     )
+            
+        #     self.mel_files = [
+        #         v + [self.spk_embs[i]] for i, v in enumerate(self.mel_files)
+        #     ]
 
         # load duration files, and zip with mel_files
         if durations_dir is not None:

@@ -170,11 +170,11 @@ if [ "${stage}" -le 2 ] && [ "${stop_stage}" -ge 2 ]; then
     for name in "${train_datasets[@]}"; do
     (
         [ ! -e "${dumpdir}/${name}/spemb" ] && mkdir -p "${dumpdir}/${name}/spemb"
-        echo "Speaker embedding computation start. See the progress via ${dumpdir}/${name}/spemb/spemb.*.log."
-        ${train_cmd} JOB=1:${n_jobs} "${dumpdir}/${name}/spemb/spemb.JOB.log" \
+        echo "Speaker embedding computation start. See the progress via ${dumpdir}/${name}/spemb/spemb.log."
+        ${train_cmd} "${dumpdir}/${name}/spemb/spemb.log" \
             python local/embedding.py \
-                --wav_scp "${dumpdir}/${name}/raw/wav.JOB.scp" \
-                --output_dir "${dumpdir}/${name}/spemb/dump.JOB/" \
+                --wav_scp "data/${name}/wav.scp" \
+                --output_dir "${dumpdir}/${name}/spemb" \
                 --model_source "speechbrain/spkrec-ecapa-voxceleb" \
                 --verbose "${verbose}"
         echo "Successfully finished speaker embedding computation of ${name} set."
@@ -187,11 +187,11 @@ if [ "${stage}" -le 2 ] && [ "${stop_stage}" -ge 2 ]; then
     for name in "${dev_datasets[@]}"; do
     (
         [ ! -e "${dumpdir}/${name}/spemb" ] && mkdir -p "${dumpdir}/${name}/spemb"
-        echo "Speaker embedding computation start. See the progress via ${dumpdir}/${name}/spemb/spemb.*.log."
-        ${train_cmd} JOB=1:${n_jobs} "${dumpdir}/${name}/spemb/spemb.JOB.log" \
+        echo "Speaker embedding computation start. See the progress via ${dumpdir}/${name}/spemb/spemb.log."
+        ${train_cmd} "${dumpdir}/${name}/spemb/spemb.log" \
             python local/embedding.py \
-                --wav_scp "${dumpdir}/${name}/raw/wav.JOB.scp" \
-                --output_dir "${dumpdir}/${name}/spemb/dump.JOB/" \
+                --wav_scp "data/${name}/wav.scp" \
+                --output_dir "${dumpdir}/${name}/spemb" \
                 --model_source "speechbrain/spkrec-ecapa-voxceleb" \
                 --verbose "${verbose}"
         echo "Successfully finished speaker embedding computation of ${name} set."
@@ -204,18 +204,18 @@ if [ "${stage}" -le 2 ] && [ "${stop_stage}" -ge 2 ]; then
     for name in "${eval_datasets[@]}"; do
     (
         [ ! -e "${dumpdir}/${name}/spemb" ] && mkdir -p "${dumpdir}/${name}/spemb"
-        echo "Speaker embedding computation start. See the progress via ${dumpdir}/${name}/spemb/spemb.*.log."
-        ${train_cmd} JOB=1:${n_jobs} "${dumpdir}/${name}/spemb/spemb.JOB.log" \
+        echo "Speaker embedding computation start. See the progress via ${dumpdir}/${name}/spemb/spemb.log."
+        ${train_cmd} "${dumpdir}/${name}/spemb/spemb.log" \
             python local/embedding.py \
-                --wav_scp "${dumpdir}/${name}/raw/wav.JOB.scp" \
-                --output_dir "${dumpdir}/${name}/spemb/dump.JOB/" \
+                --wav_scp "data/${name}/wav.scp" \
+                --output_dir "${dumpdir}/${name}/spemb" \
                 --model_source "speechbrain/spkrec-ecapa-voxceleb" \
                 --verbose "${verbose}"
         echo "Successfully finished speaker embedding computation of ${name} set."
     ) & pids+=($!) 
     done
     i=0; for pid in "${pids[@]}"; do wait "${pid}" || ((++i)); done
-    [ "${i}" -gt 0 ] && echo "$0: ${i} background jobs are failed." && exit 1;
+    [ "${i}" -gt 0 ] && echo "$0: ${i} background jobs failed." && exit 1;
 
 fi
 

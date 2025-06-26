@@ -825,14 +825,19 @@ class SourceVCMelDatasetManyToOne(Dataset):
             spks.append(cur_spk)
             src_mel_files[cur_spk] = sorted(find_files(src_root_dir, mel_query))
             spk_embs[cur_spk] = os.path.join(spk_dir, "spemb.h5")
-            assert os.path.exists(spk_embs[cur_spk]), f"Speaker embedding file {spk_embs[cur_spk]} does not exist. {cur_spk}"
+            spk_embs[cur_spk] = [os.path.join(spk_dir, "spemb/embedding.h5")]*len(src_mel_files[cur_spk])
+            assert os.path.exists(spk_embs[cur_spk][0]), f"Speaker embedding file {spk_embs[cur_spk][0]} does not exist. {cur_spk}"
             
 
-        self.src_mel_files = sorted([file for spk in spks for file in src_mel_files[spk]])
+        src_mel_files = sorted([file for spk in spks for file in src_mel_files[spk]])
+        spk_embs = sorted([spk_emb for spk in spks for spk_emb in spk_embs[spk]])
+        self.src_mel_files = list(map(list, zip(src_mel_files, spk_embs)))
+        # self.src_mel_files = sorted([file for spk in spks for file in src_mel_files[spk]])
+        
         self.spk_embs = spk_embs
         self.mel_load_fn = mel_load_fn
         self.dp_input_load_fn = dp_input_load_fn
-        self.emb_load_fn = lambda x: read_hdf5(x, "embeddings")
+        self.emb_load_fn = lambda x: read_hdf5(x, "embedding")
 
         # make sure the utt ids match
         src_utt_ids = sorted(
@@ -861,6 +866,7 @@ class SourceVCMelDatasetManyToOne(Dataset):
         else:
             self.src_mel_files = [[v] for v in self.src_mel_files]
             self.use_dp_input = False
+        
     def __getitem__(self, idx):
         """Get specified idx items.
 
@@ -877,18 +883,15 @@ class SourceVCMelDatasetManyToOne(Dataset):
 
         utt_id = self.utt_ids[idx]
         src_mel = self.mel_load_fn(self.src_mel_files[idx][0])
-        spk_emb = self.emb_load_fn(self.spk_embs[self.spk[idx]])
-        # convert to tensor
-        if isinstance(spk_emb, np.ndarray):
-            spk_emb = torch.tensor(spk_emb, dtype=torch.float32)
+        spk_emb = self.emb_load_fn(self.src_mel_files[idx][1])
 
-        items = {"src_feat": src_mel, "spembs": spk_emb}
+        items = {"src_feat": src_mel, "spemb": spk_emb}
 
         if self.return_utt_id:
             items["utt_id"] = utt_id
 
         if self.use_dp_input:
-            items["dp_input"] = self.dp_input_load_fn(self.src_mel_files[idx][1])
+            items["dp_input"] = self.dp_input_load_fn(self.src_mel_files[idx][2])
 
         if self.allow_cache:
             self.caches[idx] = items
